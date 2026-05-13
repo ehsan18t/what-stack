@@ -41,6 +41,22 @@ fn image_detection_keeps_known_labels_and_false_positive_guards() {
 }
 
 #[test]
+fn image_detection_is_case_insensitive_and_ignores_tags_and_digests() {
+    assert_eq!(
+        detect_from_image("POSTGRES:16").as_deref(),
+        Some("PostgreSQL")
+    );
+    assert_eq!(
+        detect_from_image("ghcr.io/org/NGINX@sha256:abcd").as_deref(),
+        Some("Nginx")
+    );
+    assert_eq!(
+        detect_from_image("mcr.microsoft.com/DOTNET/aspnet:8.0").as_deref(),
+        Some(".NET")
+    );
+}
+
+#[test]
 fn image_detection_covers_existing_service_and_runtime_labels() {
     for (image, expected) in [
         ("mysql:8", "MySQL"),
@@ -156,6 +172,37 @@ fn config_detection_covers_existing_project_markers_and_no_match_cases() {
 }
 
 #[test]
+fn config_prefix_detection_accepts_only_known_source_suffixes() {
+    for suffix in ["", ".js", ".cjs", ".mjs", ".ts", ".cts", ".mts"] {
+        let dir = TempDir::new().expect("temp dir");
+        write_file(dir.path(), &format!("next.config{suffix}"), "");
+        assert_eq!(
+            detect_from_config(dir.path()).as_deref(),
+            Some("Next.js"),
+            "next.config{suffix} should be accepted"
+        );
+    }
+
+    let backup = TempDir::new().expect("temp dir");
+    write_file(backup.path(), "next.config.bak", "");
+    assert_eq!(detect_from_config(backup.path()), None);
+}
+
+#[test]
+fn config_detection_distinguishes_dotnet_csharp_and_fsharp_projects() {
+    let csharp = TempDir::new().expect("temp dir");
+    write_file(csharp.path(), "MyApp.csproj", "");
+    assert_eq!(detect_from_config(csharp.path()).as_deref(), Some(".NET"));
+
+    let fsharp = TempDir::new().expect("temp dir");
+    write_file(fsharp.path(), "MyApp.fsproj", "");
+    assert_eq!(
+        detect_from_config(fsharp.path()).as_deref(),
+        Some(".NET (F#)")
+    );
+}
+
+#[test]
 fn python_config_detection_uses_dependencies_and_generic_fallback() {
     let flask_dependency = TempDir::new().expect("temp dir");
     write_file(
@@ -173,6 +220,31 @@ fn python_config_detection_uses_dependencies_and_generic_fallback() {
     assert_eq!(
         detect_from_config(generic_python.path()).as_deref(),
         Some("Python")
+    );
+}
+
+#[test]
+fn python_dependency_detection_uses_package_boundaries() {
+    let plugin_only = TempDir::new().expect("temp dir");
+    write_file(
+        plugin_only.path(),
+        "requirements.txt",
+        "flask-login==0.6.3\nstarlette-exporter==0.23.0\n",
+    );
+    assert_eq!(
+        detect_from_config(plugin_only.path()).as_deref(),
+        Some("Python")
+    );
+
+    let direct = TempDir::new().expect("temp dir");
+    write_file(
+        direct.path(),
+        "requirements.txt",
+        "fastapi[standard]>=0.115\n",
+    );
+    assert_eq!(
+        detect_from_config(direct.path()).as_deref(),
+        Some("FastAPI")
     );
 }
 
@@ -200,6 +272,23 @@ fn project_detection_walks_upward_and_respects_home_ceiling() {
 }
 
 #[test]
+fn project_detection_returns_none_without_markers_and_respects_depth_limit() {
+    let unmarked = TempDir::new().expect("temp dir");
+    assert_eq!(find_project_root(unmarked.path(), None), None);
+
+    let project = TempDir::new().expect("temp dir");
+    write_file(project.path(), "package.json", "{}");
+
+    let mut deep = project.path().to_path_buf();
+    for index in 0..=64 {
+        deep = deep.join(format!("d{index}"));
+    }
+    std::fs::create_dir_all(&deep).expect("create deep dir");
+
+    assert_eq!(find_project_root(&deep, None), None);
+}
+
+#[test]
 fn project_input_uses_cwd_then_exe_then_absolute_command_arguments() {
     let workspace = TempDir::new().expect("temp dir");
     let exe_root = workspace.path().join("service");
@@ -223,6 +312,37 @@ fn project_input_uses_cwd_then_exe_then_absolute_command_arguments() {
     assert_eq!(
         resolve_project_root(input).as_deref(),
         Some(exe_root.as_path())
+    );
+}
+
+#[test]
+fn project_input_uses_cwd_before_exe_and_absolute_command_arguments() {
+    let workspace = TempDir::new().expect("temp dir");
+    let web_root = workspace.path().join("web");
+    let exe_root = workspace.path().join("service");
+    let tooling_root = workspace.path().join("tooling");
+    let cwd = web_root.join("src");
+    let exe_path = exe_root.join("bin").join("service.exe");
+    let cmd_path = tooling_root.join("scripts").join("launcher.py");
+
+    write_file(&web_root, "package.json", "{}");
+    write_file(&exe_root, "Cargo.toml", "");
+    write_file(&tooling_root, "pyproject.toml", "");
+    write_file(&cwd, "index.ts", "");
+    write_file(exe_path.parent().expect("exe parent"), "service.exe", "");
+    write_file(cmd_path.parent().expect("cmd parent"), "launcher.py", "");
+
+    let cmd = vec![OsString::from(&cmd_path)];
+    let input = ProjectInput {
+        cwd: Some(cwd.as_path()),
+        exe: Some(exe_path.as_path()),
+        cmd: &cmd,
+        home: None,
+    };
+
+    assert_eq!(
+        resolve_project_root(input).as_deref(),
+        Some(web_root.as_path())
     );
 }
 
@@ -261,4 +381,49 @@ fn stack_detector_preserves_priority_and_config_guard() {
         exe_path: Some(shell_path.as_path()),
     });
     assert_eq!(guarded, None);
+}
+
+#[test]
+fn stack_detector_caches_project_and_config_detection_results() {
+    let project = TempDir::new().expect("temp dir");
+    let nested = project.path().join("src");
+    std::fs::create_dir_all(&nested).expect("create nested dir");
+    write_file(project.path(), "Cargo.toml", "");
+
+    let mut detector = StackDetector::new(None);
+    let root = detector.detect_project_root(ProjectInput {
+        cwd: Some(nested.as_path()),
+        exe: None,
+        cmd: &[],
+        home: None,
+    });
+    assert_eq!(root.as_deref(), Some(project.path()));
+
+    let stack = detector.detect_stack(StackInput {
+        image: None,
+        project_root: Some(project.path()),
+        process_name: "cargo",
+        exe_name: None,
+        exe_path: None,
+    });
+    assert_eq!(stack.as_deref(), Some("Rust"));
+
+    std::fs::remove_file(project.path().join("Cargo.toml")).expect("remove marker");
+
+    let cached_root = detector.detect_project_root(ProjectInput {
+        cwd: Some(nested.as_path()),
+        exe: None,
+        cmd: &[],
+        home: None,
+    });
+    assert_eq!(cached_root.as_deref(), Some(project.path()));
+
+    let cached_stack = detector.detect_stack(StackInput {
+        image: None,
+        project_root: Some(project.path()),
+        process_name: "cargo",
+        exe_name: None,
+        exe_path: None,
+    });
+    assert_eq!(cached_stack.as_deref(), Some("Rust"));
 }
