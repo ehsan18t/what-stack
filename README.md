@@ -1,36 +1,82 @@
 # what-stack
 
-Universal Rust library for detecting project roots and technology stacks
+Universal Rust library for detecting project roots and technology stacks from
+generic inputs such as image names, project directories, process names,
+executable paths, and command-line arguments.
 
 [![CI](https://github.com/ehsan18t/what-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/ehsan18t/what-stack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![docs.rs](https://docs.rs/what-stack/badge.svg)](https://docs.rs/what-stack)
 
+## Goals
 
-## Getting Started
+- Standalone library API with no PortLens, socket, Docker-client, or CLI types.
+- Zero default runtime dependencies on Windows; Unix uses `libc` only for robust
+  home-directory lookup.
+- No async runtime, regex engine, logging facade, serde model, or subprocesses.
+- Best-effort detection that prefers explicit evidence over port-number guesses.
+
+## Install
 
 ```toml
 [dependencies]
 what-stack = "0.1"
 ```
 
+## Quick Start
+
+```rust
+use std::path::Path;
+use what_stack::{StackDetector, StackInput, detect_from_image, detect_from_process};
+
+assert_eq!(detect_from_image("postgres:16").as_deref(), Some("PostgreSQL"));
+assert_eq!(detect_from_process("NGINX.EXE").as_deref(), Some("Nginx"));
+
+let mut detector = StackDetector::new(None);
+let label = detector.detect_stack(StackInput {
+    image: None,
+    project_root: Some(Path::new(".")),
+    process_name: "node",
+    exe_name: None,
+    exe_path: None,
+});
+
+println!("{label:?}");
+```
+
+## Detection Sources
+
+`what-stack` detects stacks from:
+
+- Image names, for example `postgres:16`, `redis/redis-stack`, or
+  `mcr.microsoft.com/dotnet/aspnet`.
+- Project config files, for example `next.config.mjs`, `Cargo.toml`, `go.mod`,
+  `pyproject.toml`, `pom.xml`, `build.gradle`, `Gemfile`, and `.csproj`.
+- Python entry and dependency files, including Django, Flask, FastAPI,
+  Starlette, Litestar, and generic Python fallback.
+- Process names, including common runtimes, databases, web servers, search
+  services, message brokers, and dev tools.
+- Project markers found by walking upward from cwd, executable parent, or
+  absolute command-line argument paths.
+
+High-level stack detection uses this priority:
+
+1. Image name.
+2. Project config, only when the process is recognized or the executable is
+   inside the project.
+3. Process name.
+
+There is no well-known-port fallback.
 
 ## Development
 
-### Prerequisites
-
-- Rust stable toolchain
-- Supported lint targets:
+Install Rust stable and the supported lint targets:
 
 ```bash
 rustup target add x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
 ```
 
-- Optional dependency audit: `cargo install cargo-deny`
-- Benchmark execution: Valgrind and `cargo install --version 0.18.2 gungraun-runner`
-
-
-### Install Git Hooks
+Install local hooks:
 
 ```powershell
 .\scripts\install-hooks.ps1
@@ -40,7 +86,7 @@ rustup target add x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
 bash scripts/install-hooks.sh
 ```
 
-### Quality Gates
+## Quality Gates
 
 | Gate | Command | Purpose |
 | ---- | ------- | ------- |
@@ -52,24 +98,13 @@ bash scripts/install-hooks.sh
 | 6 | `cargo doc --locked --no-deps` | Documentation |
 | 7 | `cargo deny check` | Dependency audit |
 
-
 ## Benchmarks
 
 This crate uses [Gungraun](https://crates.io/crates/gungraun) for deterministic
-instruction-count benchmarks. Benchmark execution requires `gungraun-runner`
-and Valgrind on a supported host. CI compiles benchmarks on Linux and Windows,
-and runs regression checks on the hosted Ubuntu runner where Valgrind setup is
-available.
+instruction-count benchmarks.
 
 ```bash
 cargo bench --bench benchmarks
-```
-
-To compare against a baseline:
-
-```bash
-cargo bench --bench benchmarks -- --save-baseline main --callgrind-metrics=ir
-cargo bench --bench benchmarks -- --baseline main --callgrind-metrics=ir --callgrind-limits='ir=1.0%'
 ```
 
 ## Contributing

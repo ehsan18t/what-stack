@@ -1,0 +1,231 @@
+//! Project-root detection.
+
+use std::borrow::Cow;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
+
+#[cfg(unix)]
+use std::ffi::CStr;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+
+use crate::ProjectInput;
+
+const PROJECT_MARKERS: &[&str] = &[
+    "package.json",
+    "Cargo.toml",
+    "go.mod",
+    "pyproject.toml",
+    "requirements.txt",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "composer.json",
+    "Gemfile",
+    "mix.exs",
+    "deno.json",
+    "bun.lockb",
+];
+
+const PROJECT_MARKER_EXTENSIONS: &[&str] = &["csproj", "fsproj"];
+
+/// Maximum number of parent directories searched during project detection.
+pub const MAX_WALK_DEPTH: usize = 64;
+
+/// Resolve a project root from process-like path inputs.
+#[must_use]
+pub fn resolve_project_root(input: ProjectInput<'_>) -> Option<PathBuf> {
+    if let Some(cwd) = input.cwd
+        && let Some(root) = find_project_root(cwd, input.home)
+    {
+        return Some(root);
+    }
+
+    if let Some(exe_parent) = input.exe.and_then(Path::parent)
+        && let Some(root) = find_project_root(exe_parent, input.home)
+    {
+        return Some(root);
+    }
+
+    absolute_cmd_parents(input.cmd).find_map(|parent| find_project_root(parent, input.home))
+}
+
+/// Walk upward from `start` looking for project marker files.
+#[must_use]
+pub fn find_project_root(start: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    walk_ancestors(start, home).find(|dir| has_marker(dir))
+}
+
+/// Return the display name for a project root path.
+#[must_use]
+pub fn project_name(root: &Path) -> Option<Cow<'_, str>> {
+    root.file_name().map(OsStr::to_string_lossy)
+}
+
+pub fn walk_ancestors<'a>(
+    start: &'a Path,
+    home: Option<&'a Path>,
+) -> impl Iterator<Item = PathBuf> + 'a {
+    let mut current = Some(start.to_path_buf());
+    let mut depth = 0;
+
+    std::iter::from_fn(move || {
+        let dir = current.as_ref()?.clone();
+
+        if depth >= MAX_WALK_DEPTH {
+            current = None;
+            return None;
+        }
+
+        if let Some(home_dir) = home
+            && dir == home_dir
+        {
+            current = None;
+            return None;
+        }
+
+        depth += 1;
+
+        let mut next = dir.clone();
+        if next.pop() && next != dir {
+            current = Some(next);
+        } else {
+            current = None;
+        }
+
+        Some(dir)
+    })
+}
+
+pub fn absolute_cmd_parents(cmd: &[std::ffi::OsString]) -> impl Iterator<Item = &Path> + '_ {
+    cmd.iter().filter_map(|arg| {
+        let path = Path::new(arg.as_os_str());
+        path.is_absolute().then(|| path.parent()).flatten()
+    })
+}
+
+pub fn has_marker(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return false;
+    };
+
+    entries.filter_map(Result::ok).any(|entry| {
+        let file_name = entry.file_name();
+        let Some(name) = file_name.to_str() else {
+            return false;
+        };
+
+        PROJECT_MARKERS.contains(&name)
+            || Path::new(name)
+                .extension()
+                .and_then(OsStr::to_str)
+                .is_some_and(|extension| PROJECT_MARKER_EXTENSIONS.contains(&extension))
+    })
+}
+
+/// Return the current user's home directory, when it can be determined.
+#[must_use]
+pub fn home_dir() -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        select_home_dir(
+            preferred_home_uid().and_then(home_dir_from_uid),
+            sudo_home_dir(),
+            std::env::var_os("HOME").map(PathBuf::from),
+        )
+    }
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }
+}
+
+#[cfg(unix)]
+fn select_home_dir(
+    passwd_home: Option<PathBuf>,
+    sudo_home: Option<PathBuf>,
+    env_home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    passwd_home.or(sudo_home).or(env_home)
+}
+
+#[cfg(unix)]
+fn sudo_home_dir() -> Option<PathBuf> {
+    (current_effective_uid() == 0)
+        .then(|| std::env::var_os("SUDO_HOME"))
+        .flatten()
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from)
+}
+
+#[cfg(unix)]
+fn preferred_home_uid() -> Option<libc::uid_t> {
+    preferred_home_uid_from_env(
+        std::env::var_os("SUDO_UID").as_deref(),
+        current_effective_uid(),
+    )
+}
+
+#[cfg(unix)]
+fn preferred_home_uid_from_env(
+    sudo_uid: Option<&OsStr>,
+    current_euid: libc::uid_t,
+) -> Option<libc::uid_t> {
+    if current_euid == 0 {
+        sudo_uid
+            .and_then(OsStr::to_str)
+            .and_then(|value| value.parse::<libc::uid_t>().ok())
+            .or(Some(current_euid))
+    } else {
+        Some(current_euid)
+    }
+}
+
+#[cfg(unix)]
+fn current_effective_uid() -> libc::uid_t {
+    // Safety: `geteuid` has no preconditions and only returns the caller's euid.
+    unsafe { libc::geteuid() }
+}
+
+#[cfg(unix)]
+fn home_dir_from_uid(uid: libc::uid_t) -> Option<PathBuf> {
+    let mut buffer = vec![0_u8; passwd_buffer_len()];
+    let mut passwd = std::mem::MaybeUninit::<libc::passwd>::zeroed();
+    let mut result = std::ptr::null_mut();
+    // Safety: all pointers reference valid stack/heap storage for this call,
+    // and `buffer` remains alive until `passwd.pw_dir` has been copied.
+    let status = unsafe {
+        libc::getpwuid_r(
+            uid,
+            passwd.as_mut_ptr(),
+            buffer.as_mut_ptr().cast(),
+            buffer.len(),
+            &raw mut result,
+        )
+    };
+
+    if status != 0 || result.is_null() {
+        return None;
+    }
+
+    // Safety: `getpwuid_r` succeeded and initialized `passwd`.
+    let passwd = unsafe { passwd.assume_init() };
+    if passwd.pw_dir.is_null() {
+        return None;
+    }
+
+    // Safety: successful passwd records expose a nul-terminated directory path.
+    let home = unsafe { CStr::from_ptr(passwd.pw_dir) };
+    Some(Path::new(OsStr::from_bytes(home.to_bytes())).to_path_buf())
+}
+
+#[cfg(unix)]
+fn passwd_buffer_len() -> usize {
+    const DEFAULT_PASSWD_BUFFER_LEN: usize = 1024;
+
+    // Safety: `sysconf` has no preconditions for this constant.
+    match unsafe { libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) } {
+        size if size > 0 => usize::try_from(size).unwrap_or(DEFAULT_PASSWD_BUFFER_LEN),
+        _ => DEFAULT_PASSWD_BUFFER_LEN,
+    }
+}
