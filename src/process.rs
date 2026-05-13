@@ -1,4 +1,7 @@
 //! Process-name based stack detection.
+//!
+//! Process detection is deliberately exact: `node` maps to `Node.js`, while
+//! unrelated names such as `node-exporter` do not.
 
 use std::borrow::Cow;
 
@@ -69,6 +72,25 @@ const PROCESS_MAP: &[(&str, &str)] = &[
 ];
 
 /// Detect a stack label from a process executable name.
+///
+/// Matching is ASCII case-insensitive. A trailing Windows `.exe` suffix is
+/// ignored before matching, so `NGINX.EXE` and `nginx` produce the same label.
+///
+/// # Examples
+///
+/// ```
+/// use what_stack::detect_from_process;
+///
+/// assert_eq!(detect_from_process("python3").as_deref(), Some("Python"));
+/// assert_eq!(detect_from_process("NGINX.EXE").as_deref(), Some("Nginx"));
+/// assert_eq!(detect_from_process("node-exporter"), None);
+/// ```
+///
+/// # Limits
+///
+/// This function does not inspect command-line arguments or project files.
+/// Use [`StackDetector`](crate::StackDetector) when process names should be
+/// combined with project config and image metadata.
 #[must_use]
 pub fn detect_from_process(process_name: &str) -> Option<StackLabel> {
     let name = strip_windows_exe_suffix(process_name);

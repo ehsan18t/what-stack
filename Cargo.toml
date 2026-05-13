@@ -21,6 +21,10 @@ missing_docs = "deny"
 let_underscore_drop = "deny"
 non_ascii_idents = "deny"
 
+[lints.rustdoc]
+bare_urls = "deny"
+broken_intra_doc_links = "deny"
+
 
 
 [target.'cfg(unix)'.dependencies]

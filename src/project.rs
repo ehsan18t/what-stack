@@ -1,4 +1,8 @@
 //! Project-root detection.
+//!
+//! Project detection walks upward from process paths and looks for marker
+//! files such as `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, and
+//! project-file extensions such as `.csproj` and `.fsproj`.
 
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -30,9 +34,40 @@ const PROJECT_MARKERS: &[&str] = &[
 const PROJECT_MARKER_EXTENSIONS: &[&str] = &["csproj", "fsproj"];
 
 /// Maximum number of parent directories searched during project detection.
+///
+/// This cap is a safety net for unusual paths and very deep directory trees.
+/// The value is intentionally high enough for common monorepos while bounding
+/// worst-case filesystem work.
 pub const MAX_WALK_DEPTH: usize = 64;
 
 /// Resolve a project root from process-like path inputs.
+///
+/// The fallback order is:
+///
+/// 1. Walk upward from [`ProjectInput::cwd`].
+/// 2. Walk upward from the parent directory of [`ProjectInput::exe`].
+/// 3. Walk upward from the parent directory of each absolute path in
+///    [`ProjectInput::cmd`].
+///
+/// The first marker hit wins. Relative command-line paths are ignored because
+/// they are ambiguous without a reliable process working directory.
+///
+/// # Examples
+///
+/// ```
+/// use std::ffi::OsString;
+/// use what_stack::{ProjectInput, resolve_project_root};
+///
+/// let cmd: Vec<OsString> = Vec::new();
+/// let input = ProjectInput {
+///     cwd: None,
+///     exe: None,
+///     cmd: &cmd,
+///     home: None,
+/// };
+///
+/// assert_eq!(resolve_project_root(input), None);
+/// ```
 #[must_use]
 pub fn resolve_project_root(input: ProjectInput<'_>) -> Option<PathBuf> {
     if let Some(cwd) = input.cwd
@@ -51,12 +86,37 @@ pub fn resolve_project_root(input: ProjectInput<'_>) -> Option<PathBuf> {
 }
 
 /// Walk upward from `start` looking for project marker files.
+///
+/// `home` is an optional ceiling. When the walk reaches `home`, it stops before
+/// testing that directory for markers. This avoids accidental matches from
+/// marker files stored directly in a user's home directory.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+/// use what_stack::find_project_root;
+///
+/// assert_eq!(find_project_root(Path::new("."), Some(Path::new("."))), None);
+/// ```
 #[must_use]
 pub fn find_project_root(start: &Path, home: Option<&Path>) -> Option<PathBuf> {
     walk_ancestors(start, home).find(|dir| has_marker(dir))
 }
 
 /// Return the display name for a project root path.
+///
+/// The returned label is derived only from the final path component. It does
+/// not read package manifests or normalize workspace names.
+///
+/// # Examples
+///
+/// ```
+/// use std::path::Path;
+/// use what_stack::project_name;
+///
+/// assert_eq!(project_name(Path::new("/workspace/api")).as_deref(), Some("api"));
+/// ```
 #[must_use]
 pub fn project_name(root: &Path) -> Option<Cow<'_, str>> {
     root.file_name().map(OsStr::to_string_lossy)
@@ -124,6 +184,14 @@ pub fn has_marker(dir: &Path) -> bool {
 }
 
 /// Return the current user's home directory, when it can be determined.
+///
+/// On Unix, this prefers passwd-database lookup for the invoking user. During
+/// `sudo` sessions it uses `SUDO_UID` to find the original user's home, falling
+/// back to `SUDO_HOME` and then `HOME` when passwd lookup is unavailable. On
+/// Windows, it reads `USERPROFILE`.
+///
+/// Callers that perform many project-root lookups should call this once and
+/// pass the result into [`find_project_root`] or [`ProjectInput::home`].
 #[must_use]
 pub fn home_dir() -> Option<PathBuf> {
     #[cfg(unix)]
