@@ -1,0 +1,15 @@
+# WhatStack - clippy configuration.
+
+too-many-lines-threshold = 100
+cognitive-complexity-threshold = 30
+enum-variant-size-threshold = 200
+
+disallowed-macros = [
+  { path = "std::dbg", reason = "debug macro left in committed code" },
+  { path = "std::todo", reason = "unfinished code left in committed code" },
+  { path = "std::unimplemented", reason = "unfinished code left in committed code" },
+]
+
+disallowed-methods = [
+  { path = "std::process::abort", reason = "return an error instead of aborting" },
+]

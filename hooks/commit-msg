@@ -1,0 +1,43 @@
+#!/bin/sh
+# Conventional Commits validation hook.
+
+commit_msg_file="$1"
+subject="$(head -1 "$commit_msg_file")"
+
+if echo "$subject" | grep -qE '^Merge '; then
+    exit 0
+fi
+
+if echo "$subject" | grep -qE '^Revert "'; then
+    exit 0
+fi
+
+types="feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert|enforce"
+pattern="^($types)(\([a-z0-9-]+\))?: [a-z]"
+
+if ! echo "$subject" | grep -qE "$pattern"; then
+    echo ""
+    echo "ERROR: COMMIT MESSAGE REJECTED"
+    echo "  Your message: \"$subject\""
+    echo "  Expected: <type>(<scope>): <description>"
+    echo "  Types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert, enforce"
+    exit 1
+fi
+
+desc="$(echo "$subject" | sed -E "s/^($types)(\([a-z0-9-]+\))?: //")"
+desc_len=${#desc}
+
+if [ "$desc_len" -lt 5 ]; then
+    echo "ERROR: commit description must be at least 5 characters."
+    exit 1
+fi
+
+if [ "$desc_len" -gt 200 ]; then
+    echo "ERROR: commit description must be at most 200 characters."
+    exit 1
+fi
+
+if echo "$subject" | grep -qE '\.$'; then
+    echo "ERROR: commit subject must not end with a period."
+    exit 1
+fi

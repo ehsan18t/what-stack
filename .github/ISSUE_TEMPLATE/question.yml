@@ -1,0 +1,23 @@
+name: Question / Support
+description: Ask a question about usage or troubleshooting
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Need help using what-stack? Ask your question below. For bugs,
+        use the Bug Report template instead.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: Describe what you need help with.
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Include relevant versions, OS, commands, logs, or code.

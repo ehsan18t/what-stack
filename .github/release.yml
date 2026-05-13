@@ -1,0 +1,14 @@
+changelog:
+  categories:
+    - title: Breaking Changes
+      labels: [breaking-change, semver-major]
+    - title: Features
+      labels: [enhancement, feature, feat]
+    - title: Fixes
+      labels: [bug, bugfix, fix]
+    - title: Documentation
+      labels: [docs, documentation]
+    - title: Maintenance
+      labels: [chore, ci, dependencies, perf, refactor, style, test]
+    - title: Other Changes
+      labels: ["*"]

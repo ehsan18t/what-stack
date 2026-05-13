@@ -1,0 +1,17 @@
+* text=auto eol=lf
+*.rs        text eol=lf
+*.toml      text eol=lf
+*.lock      text eol=lf
+*.md        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+*.sh        text eol=lf
+hooks/commit-msg  text eol=lf
+hooks/pre-commit  text eol=lf
+hooks/pre-push    text eol=lf
+*.ico       binary
+*.png       binary
+*.exe       binary

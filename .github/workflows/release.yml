@@ -1,0 +1,77 @@
+# what-stack - Release Workflow
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, without leading v"
+        required: true
+        type: string
+      commit:
+        description: "Commit SHA to tag, empty for latest default-branch commit"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Draft Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate version format
+        run: |
+          version="${{ inputs.version }}"
+          if ! echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Invalid version format: '$version'. Expected semver."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "TAG=v$version" >> "$GITHUB_ENV"
+
+      - name: Resolve target commit
+        run: |
+          commit="${{ inputs.commit }}"
+          if [ -z "$commit" ]; then
+            echo "TARGET=${{ github.sha }}" >> "$GITHUB_ENV"
+          else
+            echo "TARGET=$commit" >> "$GITHUB_ENV"
+          fi
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ env.TARGET }}
+
+      - name: Verify Cargo.toml version matches
+        run: |
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "$cargo_version" != "$VERSION" ]; then
+            echo "::warning::Cargo.toml version ($cargo_version) does not match release version ($VERSION)."
+          fi
+
+      - name: Check tag does not already exist
+        run: |
+          if git rev-parse "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists."
+            exit 1
+          fi
+
+      - name: Create and push tag
+        run: |
+          git tag "$TAG" "$TARGET"
+          git push origin "$TAG"
+
+      - name: Create draft GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$TAG" \
+            --title "what-stack $TAG" \
+            --generate-notes \
+            --draft \
+            --target "$TARGET"

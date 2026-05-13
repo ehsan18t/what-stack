@@ -1,0 +1,45 @@
+#!/bin/sh
+# what-stack - Pre-commit quality gate.
+
+set -eu
+
+ensure_cargo() {
+    if command -v cargo >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if [ -f "$HOME/.cargo/env" ]; then
+        . "$HOME/.cargo/env"
+    fi
+
+    if command -v cargo >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if [ -x "$HOME/.cargo/bin/cargo" ]; then
+        PATH="$HOME/.cargo/bin:$PATH"
+        export PATH
+        return 0
+    fi
+
+    echo "ERROR: cargo is not available in the git hook environment."
+    exit 1
+}
+
+ensure_cargo
+
+echo "what-stack pre-commit quality gate"
+
+echo "-> Checking formatting..."
+cargo fmt --all -- --check
+
+echo "-> Running cross-target clippy..."
+sh scripts/check-platform-clippy.sh
+
+echo "-> Running tests..."
+
+cargo test --locked --lib --tests
+cargo test --locked --doc
+
+
+echo "All pre-commit gates passed."

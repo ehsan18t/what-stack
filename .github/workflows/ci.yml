@@ -1,0 +1,176 @@
+# what-stack - CI Pipeline
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  quality-gate:
+    name: Quality Gate (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+
+      - name: "Gate 1: cargo fmt --check"
+        run: cargo fmt --all -- --check
+
+      - name: "Gate 2: cargo clippy"
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: "Gate 3: cargo test"
+        run: |
+
+          cargo test --locked --lib --tests
+          cargo test --locked --doc
+
+
+
+      - name: "Gate 4: cargo bench --no-run"
+        run: cargo bench --locked --no-run
+
+      - name: "Gate 5: cargo build"
+
+        run: cargo build --locked
+
+
+      - name: "Gate 6: cargo doc"
+
+        run: cargo doc --locked --no-deps
+        env:
+          RUSTDOCFLAGS: >-
+            -D warnings
+            -D rustdoc::bare_urls
+            -D rustdoc::invalid_rust_codeblocks
+            -D rustdoc::private_intra_doc_links
+            -D rustdoc::unescaped_backticks
+
+
+  benchmark-regression:
+    name: Benchmark Regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GUNGRAUN_SEPARATE_TARGETS: "true"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          toolchain: stable
+
+      - name: Cache Rust dependencies and build artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          cache-on-failure: true
+          key: bench
+
+      - name: Install Valgrind
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y valgrind
+
+      - name: Install gungraun-runner
+        run: |
+          version=$(cargo metadata --format-version=1 | python3 -c "import json, sys; data = json.load(sys.stdin); print(next(pkg['version'] for pkg in data['packages'] if pkg['name'] == 'gungraun'))")
+          cargo install --locked gungraun-runner --version "$version"
+
+      - name: Resolve merge-base
+        id: base
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          base=$(git merge-base HEAD origin/${{ github.base_ref }})
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "Merge-base: $base"
+
+      - name: Run benchmarks on merge-base
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          head_sha=$(git rev-parse HEAD)
+          git checkout --detach ${{ steps.base.outputs.sha }}
+          cargo bench --locked --bench benchmarks -- \
+            --save-baseline main \
+            --callgrind-metrics=ir \
+            --save-summary=json
+          git checkout --detach "$head_sha"
+
+      - name: Run PR benchmark comparison
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          cargo bench --locked --bench benchmarks -- \
+            --baseline main \
+            --callgrind-metrics=ir \
+            --callgrind-limits='ir=1.0%' \
+            --save-summary=json \
+            | tee bench_output.txt
+
+      - name: Run benchmark smoke check on main pushes
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          cargo bench --locked --bench benchmarks -- \
+            --callgrind-metrics=ir \
+            --save-summary=json \
+            | tee bench_output.txt
+
+      - name: Upload benchmark reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-reports-${{ github.sha }}
+          path: |
+            bench_output.txt
+            target/gungraun
+          retention-days: 7
+          if-no-files-found: warn
+
+
+  audit:
+    name: Dependency Audit (${{ matrix.checks }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        checks:
+          - advisories
+          - bans licenses sources
+    continue-on-error: ${{ matrix.checks == 'advisories' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: "Gate 7: cargo deny check ${{ matrix.checks }}"
+        uses: EmbarkStudios/cargo-deny-action@6c8f9facfa5047ec02d8485b6bf52b587b7777d1 # v2.0.18
+        with:
+          command: check ${{ matrix.checks }}
