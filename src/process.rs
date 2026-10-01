@@ -6,10 +6,12 @@
 //! `php-fpm8.2`) and titled processes truncated by Linux (`next-server (v1`,
 //! `gunicorn: maste`).
 
+use crate::ecosystem::Ecosystem as E;
 use crate::{StackKind, StackLabel};
 
-/// One process rule: executable name and label.
-pub type ProcessRule = (&'static str, StackLabel);
+/// One process rule: executable name, label, and the ecosystem whose project
+/// config may refine the label.
+pub type ProcessRule = (&'static str, StackLabel, E);
 
 /// Known process names mapped to stack labels.
 ///
@@ -17,69 +19,77 @@ pub type ProcessRule = (&'static str, StackLabel);
 /// Linear scan with `eq_ignore_ascii_case` avoids allocating a lowercase
 /// `String` on every lookup.
 pub const PROCESS_MAP: &[ProcessRule] = &[
-    ("node", StackLabel::runtime("Node.js")),
-    ("nodejs", StackLabel::runtime("Node.js")),
-    ("python", StackLabel::runtime("Python")),
-    ("python3", StackLabel::runtime("Python")),
-    ("pythonw", StackLabel::runtime("Python")),
-    ("ruby", StackLabel::runtime("Ruby")),
-    ("java", StackLabel::runtime("Java")),
-    ("javaw", StackLabel::runtime("Java")),
-    ("go", StackLabel::runtime("Go")),
-    ("deno", StackLabel::runtime("Deno")),
-    ("bun", StackLabel::runtime("Bun")),
-    ("dotnet", StackLabel::runtime(".NET")),
-    ("php", StackLabel::runtime("PHP")),
-    ("php-fpm", StackLabel::runtime("PHP")),
-    ("perl", StackLabel::runtime("Perl")),
-    ("cargo", StackLabel::runtime("Rust")),
-    ("rustc", StackLabel::runtime("Rust")),
-    ("erlang", StackLabel::runtime("Erlang")),
-    ("beam.smp", StackLabel::runtime("Erlang")),
-    ("elixir", StackLabel::runtime("Elixir")),
-    ("dart", StackLabel::runtime("Dart")),
-    ("swift", StackLabel::runtime("Swift")),
-    ("postgres", StackLabel::database("PostgreSQL")),
-    ("postgresql", StackLabel::database("PostgreSQL")),
-    ("mysqld", StackLabel::database("MySQL")),
-    ("mysql", StackLabel::database("MySQL")),
-    ("mariadbd", StackLabel::database("MariaDB")),
-    ("mariadb", StackLabel::database("MariaDB")),
-    ("mongod", StackLabel::database("MongoDB")),
-    ("mongos", StackLabel::database("MongoDB")),
-    ("redis-server", StackLabel::database("Redis")),
-    ("redis", StackLabel::database("Redis")),
-    ("valkey-server", StackLabel::database("Valkey")),
-    ("valkey", StackLabel::database("Valkey")),
-    ("memcached", StackLabel::database("Memcached")),
-    ("clickhouse-server", StackLabel::database("ClickHouse")),
-    ("cockroach", StackLabel::database("CockroachDB")),
-    ("sqlservr", StackLabel::database("SQL Server")),
-    ("nginx", StackLabel::service("Nginx")),
-    ("apache2", StackLabel::service("Apache")),
-    ("httpd", StackLabel::service("Apache")),
-    ("caddy", StackLabel::service("Caddy")),
-    ("traefik", StackLabel::service("Traefik")),
-    ("envoy", StackLabel::service("Envoy")),
-    ("haproxy", StackLabel::service("HAProxy")),
-    ("w3wp", StackLabel::service("IIS")),
-    ("gunicorn", StackLabel::runtime("Gunicorn")),
-    ("uvicorn", StackLabel::runtime("Uvicorn")),
-    ("puma", StackLabel::runtime("Puma")),
-    ("elasticsearch", StackLabel::database("Elasticsearch")),
-    ("opensearch", StackLabel::database("OpenSearch")),
-    ("rabbitmq-server", StackLabel::service("RabbitMQ")),
-    ("kafka", StackLabel::service("Kafka")),
-    ("webpack", StackLabel::tool("Webpack")),
-    ("vite", StackLabel::tool("Vite")),
-    ("next-server", StackLabel::framework("Next.js")),
-    ("nuxt", StackLabel::framework("Nuxt")),
-    ("hugo", StackLabel::framework("Hugo")),
-    ("jekyll", StackLabel::framework("Jekyll")),
-    ("flask", StackLabel::framework("Flask")),
-    ("rails", StackLabel::framework("Rails")),
-    ("gradle", StackLabel::tool("Java (Gradle)")),
-    ("mvn", StackLabel::tool("Java (Maven)")),
+    ("node", StackLabel::runtime("Node.js"), E::Node),
+    ("nodejs", StackLabel::runtime("Node.js"), E::Node),
+    ("python", StackLabel::runtime("Python"), E::Python),
+    ("python3", StackLabel::runtime("Python"), E::Python),
+    ("pythonw", StackLabel::runtime("Python"), E::Python),
+    ("ruby", StackLabel::runtime("Ruby"), E::Ruby),
+    ("java", StackLabel::runtime("Java"), E::Jvm),
+    ("javaw", StackLabel::runtime("Java"), E::Jvm),
+    ("go", StackLabel::runtime("Go"), E::Go),
+    ("deno", StackLabel::runtime("Deno"), E::Deno),
+    ("bun", StackLabel::runtime("Bun"), E::Node),
+    ("dotnet", StackLabel::runtime(".NET"), E::DotNet),
+    ("php", StackLabel::runtime("PHP"), E::Php),
+    ("php-fpm", StackLabel::runtime("PHP"), E::Php),
+    ("perl", StackLabel::runtime("Perl"), E::Other),
+    ("cargo", StackLabel::runtime("Rust"), E::Rust),
+    ("rustc", StackLabel::runtime("Rust"), E::Rust),
+    ("erlang", StackLabel::runtime("Erlang"), E::Beam),
+    ("beam.smp", StackLabel::runtime("Erlang"), E::Beam),
+    ("elixir", StackLabel::runtime("Elixir"), E::Beam),
+    ("dart", StackLabel::runtime("Dart"), E::Other),
+    ("swift", StackLabel::runtime("Swift"), E::Other),
+    ("postgres", StackLabel::database("PostgreSQL"), E::Other),
+    ("postgresql", StackLabel::database("PostgreSQL"), E::Other),
+    ("mysqld", StackLabel::database("MySQL"), E::Other),
+    ("mysql", StackLabel::database("MySQL"), E::Other),
+    ("mariadbd", StackLabel::database("MariaDB"), E::Other),
+    ("mariadb", StackLabel::database("MariaDB"), E::Other),
+    ("mongod", StackLabel::database("MongoDB"), E::Other),
+    ("mongos", StackLabel::database("MongoDB"), E::Other),
+    ("redis-server", StackLabel::database("Redis"), E::Other),
+    ("redis", StackLabel::database("Redis"), E::Other),
+    ("valkey-server", StackLabel::database("Valkey"), E::Other),
+    ("valkey", StackLabel::database("Valkey"), E::Other),
+    ("memcached", StackLabel::database("Memcached"), E::Other),
+    (
+        "clickhouse-server",
+        StackLabel::database("ClickHouse"),
+        E::Other,
+    ),
+    ("cockroach", StackLabel::database("CockroachDB"), E::Other),
+    ("sqlservr", StackLabel::database("SQL Server"), E::Other),
+    ("nginx", StackLabel::service("Nginx"), E::Other),
+    ("apache2", StackLabel::service("Apache"), E::Other),
+    ("httpd", StackLabel::service("Apache"), E::Other),
+    ("caddy", StackLabel::service("Caddy"), E::Other),
+    ("traefik", StackLabel::service("Traefik"), E::Other),
+    ("envoy", StackLabel::service("Envoy"), E::Other),
+    ("haproxy", StackLabel::service("HAProxy"), E::Other),
+    ("w3wp", StackLabel::service("IIS"), E::Other),
+    ("gunicorn", StackLabel::runtime("Gunicorn"), E::Python),
+    ("uvicorn", StackLabel::runtime("Uvicorn"), E::Python),
+    ("puma", StackLabel::runtime("Puma"), E::Ruby),
+    (
+        "elasticsearch",
+        StackLabel::database("Elasticsearch"),
+        E::Other,
+    ),
+    ("opensearch", StackLabel::database("OpenSearch"), E::Other),
+    ("rabbitmq-server", StackLabel::service("RabbitMQ"), E::Other),
+    ("kafka", StackLabel::service("Kafka"), E::Other),
+    ("webpack", StackLabel::tool("Webpack"), E::Node),
+    ("vite", StackLabel::tool("Vite"), E::Node),
+    ("next-server", StackLabel::framework("Next.js"), E::Node),
+    ("nuxt", StackLabel::framework("Nuxt"), E::Node),
+    ("hugo", StackLabel::framework("Hugo"), E::Other),
+    ("jekyll", StackLabel::framework("Jekyll"), E::Ruby),
+    ("flask", StackLabel::framework("Flask"), E::Python),
+    ("rails", StackLabel::framework("Rails"), E::Ruby),
+    ("gradle", StackLabel::tool("Java (Gradle)"), E::Jvm),
+    ("mvn", StackLabel::tool("Java (Maven)"), E::Jvm),
 ];
 
 /// Detect a stack label from a process executable name.
@@ -120,7 +130,7 @@ pub const PROCESS_MAP: &[ProcessRule] = &[
 /// combined with project config and image metadata.
 #[must_use]
 pub fn detect_from_process(process_name: &str) -> Option<StackLabel> {
-    find_process_rule(process_name).map(|(_, label)| label.clone())
+    find_process_rule(process_name).map(|(_, label, _)| label.clone())
 }
 
 /// Detect a stack label from a process name, falling back to an executable name.
@@ -143,7 +153,7 @@ pub fn detect_from_process(process_name: &str) -> Option<StackLabel> {
 /// ```
 #[must_use]
 pub fn detect_from_process_names(process_name: &str, exe_name: Option<&str>) -> Option<StackLabel> {
-    find_process_rule_by_names(process_name, exe_name).map(|(_, label)| label.clone())
+    find_process_rule_by_names(process_name, exe_name).map(|(_, label, _)| label.clone())
 }
 
 /// Process names whose processes set a title that starts with the name and a
@@ -171,7 +181,7 @@ fn find_process_rule(process_name: &str) -> Option<&'static ProcessRule> {
 fn find_exact(name: &str) -> Option<&'static ProcessRule> {
     PROCESS_MAP
         .iter()
-        .find(|(key, _)| name.eq_ignore_ascii_case(key))
+        .find(|(key, _, _)| name.eq_ignore_ascii_case(key))
 }
 
 fn find_titled(name: &str) -> Option<&'static ProcessRule> {
@@ -193,7 +203,7 @@ fn find_versioned_runtime(name: &str) -> Option<&'static ProcessRule> {
         return None;
     }
 
-    find_exact(base).filter(|(_, label)| label.kind() == StackKind::Runtime)
+    find_exact(base).filter(|(_, label, _)| label.kind() == StackKind::Runtime)
 }
 
 fn strip_windows_exe_suffix(process_name: &str) -> &str {

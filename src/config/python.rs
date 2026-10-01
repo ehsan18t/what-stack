@@ -62,11 +62,21 @@ pub const PYTHON_DEPENDENCY_PATTERNS: &[(&str, StackLabel)] = &[
     ("litestar", StackLabel::framework("Litestar")),
 ];
 
+/// Detect a Python project and its framework.
+///
+/// `python_process` is true when the process is a known Python runtime or
+/// application server. Such a process gets only framework labels: the generic
+/// `Python` fallback adds nothing to it and would replace a more specific
+/// `Gunicorn` or `Uvicorn` label. For other callers, Python entry files alone
+/// (`server.py` with no dependency file) do not count when `package.json` is
+/// present: a stray script in a Node project should not label the project
+/// `Python`.
 pub(super) fn detect_python_project(
     project_root: &Path,
     files: &ProjectFiles,
+    python_process: bool,
 ) -> Option<StackLabel> {
-    if !is_python_project(files) {
+    if !is_python_project(files, python_process) {
         return None;
     }
 
@@ -76,13 +86,15 @@ pub(super) fn detect_python_project(
 
     detect_python_framework_from_entry_files(project_root, files)
         .or_else(|| detect_python_framework_from_dependencies(project_root, files))
-        .or(Some(PYTHON_LABEL))
+        .or_else(|| (!python_process).then_some(PYTHON_LABEL))
 }
 
-fn is_python_project(files: &ProjectFiles) -> bool {
-    files.contains_exact("manage.py")
-        || files.any_exact(PYTHON_ENTRY_FILES)
-        || files.any_exact(PYTHON_DEPENDENCY_FILES)
+fn is_python_project(files: &ProjectFiles, python_process: bool) -> bool {
+    if files.contains_exact("manage.py") || files.any_exact(PYTHON_DEPENDENCY_FILES) {
+        return true;
+    }
+
+    files.any_exact(PYTHON_ENTRY_FILES) && (python_process || !files.contains_exact("package.json"))
 }
 
 fn detect_python_framework_from_entry_files(

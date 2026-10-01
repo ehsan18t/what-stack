@@ -43,6 +43,18 @@ impl ProjectFiles {
         })
     }
 
+    /// Whether `relative` exists in the project root.
+    ///
+    /// Plain names use the cached directory listing. Nested paths such as
+    /// `bin/rails` are checked on the filesystem without opening the file.
+    pub(super) fn contains_path(&self, project_root: &Path, relative: &str) -> bool {
+        if relative.contains('/') {
+            project_root.join(relative).is_file()
+        } else {
+            self.contains_exact(relative)
+        }
+    }
+
     /// Read the first [`MAX_SCAN_BYTES`] of a project file as text.
     ///
     /// Returns `None` when the name is not in the listing, is not a regular

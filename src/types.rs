@@ -264,7 +264,8 @@ impl<'a> ProjectInput<'a> {
 /// uses image, process, and project config metadata. Config detection is
 /// guarded to avoid false positives: a config label can win only when the
 /// process label is a [`StackKind::Runtime`] or [`StackKind::Tool`], or when the
-/// process is unknown but its executable path lies inside the project root.
+/// process is unknown but its executable path lies inside the project root. A
+/// known runtime or tool accepts only config labels from its own ecosystem.
 ///
 /// # Examples
 ///

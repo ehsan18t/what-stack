@@ -7,21 +7,17 @@ mod files;
 mod python;
 mod rules;
 
-pub use rules::detect_from_config;
+pub use rules::{detect_for_ecosystem, detect_from_config};
 
 /// Every built-in label config detection can produce, for consistency tests.
 #[cfg(test)]
 pub fn all_labels() -> Vec<&'static crate::StackLabel> {
-    static STANDALONE: [crate::StackLabel; 3] = [
-        rules::RACK_LABEL,
-        python::PYTHON_LABEL,
-        python::DJANGO_LABEL,
-    ];
+    static STANDALONE: [crate::StackLabel; 2] = [python::PYTHON_LABEL, python::DJANGO_LABEL];
 
-    rules::CONFIG_PATTERNS
+    rules::CONFIG_RULES
         .iter()
+        .chain(rules::LATE_CONFIG_RULES)
         .map(|(_, label, _)| label)
-        .chain(rules::CONFIG_EXTENSIONS.iter().map(|(_, label)| label))
         .chain(STANDALONE.iter())
         .chain(
             python::PYTHON_SOURCE_PATTERNS

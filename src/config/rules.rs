@@ -1,116 +1,115 @@
 use std::path::Path;
 
+use self::ConfigMatch::{AllOf, Exact, Extension, Prefix};
 use super::files::ProjectFiles;
 use super::python;
 use crate::StackLabel;
+use crate::ecosystem::Ecosystem as E;
 
+/// How a config rule recognizes its project files.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConfigMatchKind {
-    Exact,
-    Prefix,
+pub enum ConfigMatch {
+    /// A root entry with exactly this name.
+    Exact(&'static str),
+    /// A root entry named like the prefix plus a common config suffix, such as
+    /// `next.config.mjs`.
+    Prefix(&'static str),
+    /// Every listed path exists. Nested paths such as `bin/rails` use `/`.
+    AllOf(&'static [&'static str]),
+    /// A root entry with this file extension.
+    Extension(&'static str),
 }
 
-pub const CONFIG_PATTERNS: &[(&str, StackLabel, ConfigMatchKind)] = &[
+/// One config rule: matcher, label, and the ecosystem of the label.
+pub type ConfigRule = (ConfigMatch, StackLabel, E);
+
+/// Rules checked before Python detection, in priority order.
+pub const CONFIG_RULES: &[ConfigRule] = &[
     (
-        "next.config",
+        Prefix("next.config"),
         StackLabel::framework("Next.js"),
-        ConfigMatchKind::Prefix,
+        E::Node,
     ),
     (
-        "nuxt.config",
+        Prefix("nuxt.config"),
         StackLabel::framework("Nuxt"),
-        ConfigMatchKind::Prefix,
+        E::Node,
     ),
     (
-        "angular.json",
+        Exact("angular.json"),
         StackLabel::framework("Angular"),
-        ConfigMatchKind::Exact,
+        E::Node,
     ),
     (
-        "svelte.config",
+        Prefix("svelte.config"),
         StackLabel::framework("SvelteKit"),
-        ConfigMatchKind::Prefix,
+        E::Node,
     ),
     (
-        "astro.config",
+        Prefix("astro.config"),
         StackLabel::framework("Astro"),
-        ConfigMatchKind::Prefix,
+        E::Node,
     ),
+    (Prefix("vite.config"), StackLabel::tool("Vite"), E::Node),
     (
-        "vite.config",
-        StackLabel::tool("Vite"),
-        ConfigMatchKind::Prefix,
-    ),
-    (
-        "remix.config",
+        Prefix("remix.config"),
         StackLabel::framework("Remix"),
-        ConfigMatchKind::Prefix,
+        E::Node,
     ),
     (
-        "gatsby-config",
+        Prefix("gatsby-config"),
         StackLabel::framework("Gatsby"),
-        ConfigMatchKind::Prefix,
+        E::Node,
     ),
+    (Prefix("vue.config"), StackLabel::tool("Vue CLI"), E::Node),
     (
-        "vue.config",
-        StackLabel::tool("Vue CLI"),
-        ConfigMatchKind::Prefix,
-    ),
-    (
-        "webpack.config",
+        Prefix("webpack.config"),
         StackLabel::tool("Webpack"),
-        ConfigMatchKind::Prefix,
+        E::Node,
     ),
+    (Exact("Cargo.toml"), StackLabel::runtime("Rust"), E::Rust),
+    (Exact("go.mod"), StackLabel::runtime("Go"), E::Go),
+    (Exact("go.work"), StackLabel::runtime("Go"), E::Go),
+    (Exact("pom.xml"), StackLabel::tool("Java (Maven)"), E::Jvm),
     (
-        "Cargo.toml",
-        StackLabel::runtime("Rust"),
-        ConfigMatchKind::Exact,
-    ),
-    ("go.mod", StackLabel::runtime("Go"), ConfigMatchKind::Exact),
-    ("go.work", StackLabel::runtime("Go"), ConfigMatchKind::Exact),
-    (
-        "pom.xml",
-        StackLabel::tool("Java (Maven)"),
-        ConfigMatchKind::Exact,
-    ),
-    (
-        "build.gradle.kts",
+        Exact("build.gradle.kts"),
         StackLabel::tool("Kotlin (Gradle)"),
-        ConfigMatchKind::Exact,
+        E::Jvm,
     ),
     (
-        "build.gradle",
+        Exact("build.gradle"),
         StackLabel::tool("Java (Gradle)"),
-        ConfigMatchKind::Exact,
+        E::Jvm,
     ),
     (
-        "composer.json",
-        StackLabel::runtime("PHP"),
-        ConfigMatchKind::Exact,
+        AllOf(&["artisan", "composer.json"]),
+        StackLabel::framework("Laravel"),
+        E::Php,
     ),
+    (Exact("composer.json"), StackLabel::runtime("PHP"), E::Php),
+    (Exact("mix.exs"), StackLabel::runtime("Elixir"), E::Beam),
+    (Exact("deno.json"), StackLabel::runtime("Deno"), E::Deno),
+    (Exact("deno.jsonc"), StackLabel::runtime("Deno"), E::Deno),
+];
+
+/// Rules checked after Python detection, in priority order.
+pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
     (
-        "mix.exs",
-        StackLabel::runtime("Elixir"),
-        ConfigMatchKind::Exact,
+        AllOf(&["Gemfile", "config.ru", "bin/rails"]),
+        StackLabel::framework("Rails"),
+        E::Ruby,
     ),
+    (AllOf(&["Gemfile", "config.ru"]), RACK_LABEL, E::Ruby),
+    (Extension("csproj"), StackLabel::runtime(".NET"), E::DotNet),
     (
-        "deno.json",
-        StackLabel::runtime("Deno"),
-        ConfigMatchKind::Exact,
-    ),
-    (
-        "deno.jsonc",
-        StackLabel::runtime("Deno"),
-        ConfigMatchKind::Exact,
+        Extension("fsproj"),
+        StackLabel::runtime(".NET (F#)"),
+        E::DotNet,
     ),
 ];
 
-pub const CONFIG_EXTENSIONS: &[(&str, StackLabel)] = &[
-    ("csproj", StackLabel::runtime(".NET")),
-    ("fsproj", StackLabel::runtime(".NET (F#)")),
-];
-
-/// Label for Ruby projects with both `Gemfile` and `config.ru`.
+/// Label for Ruby projects with both `Gemfile` and `config.ru` but no
+/// `bin/rails`.
 pub const RACK_LABEL: StackLabel = StackLabel::framework("Ruby (Rack)");
 
 const COMMON_CONFIG_SUFFIXES: &[&str] = &["", ".js", ".cjs", ".mjs", ".ts", ".cts", ".mts"];
@@ -121,7 +120,18 @@ const COMMON_CONFIG_SUFFIXES: &[&str] = &["", ".js", ".cjs", ".mjs", ".ts", ".ct
 /// priority order. More specific frontend framework config files are evaluated
 /// before generic runtime markers such as `Cargo.toml` or `go.mod`. Python
 /// projects get a second pass that can identify `Django`, `Flask`, `FastAPI`,
-/// `Starlette`, and `Litestar` from entry files or dependency files.
+/// `Starlette`, and `Litestar` from entry files or dependency files. Ruby
+/// projects need `Gemfile` and `config.ru` (`Ruby (Rack)`), plus `bin/rails`
+/// for `Rails`. PHP projects with `artisan` next to `composer.json` are
+/// `Laravel`.
+///
+/// This function knows nothing about the process, so it uses the same rules
+/// [`StackDetector`](crate::StackDetector) applies to an unknown process.
+/// Python entry files such as `server.py` alone do not make a Python project
+/// when `package.json` is present without a Python dependency file. The
+/// detector narrows the rules to the process's ecosystem: a `php` process in a
+/// Laravel project with `vite.config.js` is `Laravel`, while a `node` process
+/// there is `Vite`.
 ///
 /// # Examples
 ///
@@ -139,38 +149,55 @@ const COMMON_CONFIG_SUFFIXES: &[&str] = &["", ".js", ".cjs", ".mjs", ".ts", ".ct
 /// dependency files used for Python detection are capped to the first 64 KiB.
 #[must_use]
 pub fn detect_from_config(project_root: &Path) -> Option<StackLabel> {
+    detect_for_ecosystem(project_root, None)
+}
+
+/// Config detection for a process of a known ecosystem.
+///
+/// `None` means the process is unknown: every rule applies in priority order,
+/// and Python entry files alone do not make a Python project when
+/// `package.json` is present. `Some(ecosystem)` limits detection to that
+/// ecosystem's rules (a `deno` process also accepts Node rules), so a `php` process in a Laravel project with
+/// `vite.config.js` is `Laravel` and a `node` process next to a stray
+/// `server.py` is not `Python`. A Python process gets only framework labels:
+/// the generic `Python` fallback adds nothing to it, and would replace a more
+/// specific `Gunicorn` or `Uvicorn` label.
+pub fn detect_for_ecosystem(project_root: &Path, scope: Option<E>) -> Option<StackLabel> {
     let files = ProjectFiles::read(project_root)?;
+    let in_scope = |ecosystem: E| scope.is_none_or(|scope| scope.accepts_config(ecosystem));
+    let python_process = scope == Some(E::Python);
 
-    detect_from_config_patterns(&files)
-        .or_else(|| python::detect_python_project(project_root, &files))
-        .or_else(|| detect_rack_project(&files))
-        .or_else(|| detect_from_config_extensions(&files))
+    detect_from_rules(project_root, &files, CONFIG_RULES, in_scope)
+        .or_else(|| {
+            in_scope(E::Python)
+                .then(|| python::detect_python_project(project_root, &files, python_process))
+                .flatten()
+        })
+        .or_else(|| detect_from_rules(project_root, &files, LATE_CONFIG_RULES, in_scope))
 }
 
-fn detect_from_config_patterns(files: &ProjectFiles) -> Option<StackLabel> {
-    for (pattern, label, match_kind) in CONFIG_PATTERNS {
-        let matches = match match_kind {
-            ConfigMatchKind::Exact => files.contains_exact(pattern),
-            ConfigMatchKind::Prefix => files.contains_prefix(pattern),
-        };
-
-        if matches {
-            return Some(label.clone());
-        }
-    }
-
-    None
-}
-
-fn detect_rack_project(files: &ProjectFiles) -> Option<StackLabel> {
-    (files.contains_exact("Gemfile") && files.contains_exact("config.ru")).then_some(RACK_LABEL)
-}
-
-fn detect_from_config_extensions(files: &ProjectFiles) -> Option<StackLabel> {
-    CONFIG_EXTENSIONS
+fn detect_from_rules(
+    project_root: &Path,
+    files: &ProjectFiles,
+    rules: &[ConfigRule],
+    in_scope: impl Fn(E) -> bool,
+) -> Option<StackLabel> {
+    rules
         .iter()
-        .find(|(extension, _)| files.contains_extension(extension))
-        .map(|(_, label)| label.clone())
+        .filter(|(_, _, ecosystem)| in_scope(*ecosystem))
+        .find(|(matcher, _, _)| rule_matches(project_root, files, *matcher))
+        .map(|(_, label, _)| label.clone())
+}
+
+fn rule_matches(project_root: &Path, files: &ProjectFiles, matcher: ConfigMatch) -> bool {
+    match matcher {
+        Exact(name) => files.contains_exact(name),
+        Prefix(prefix) => files.contains_prefix(prefix),
+        AllOf(paths) => paths
+            .iter()
+            .all(|path| files.contains_path(project_root, path)),
+        Extension(extension) => files.contains_extension(extension),
+    }
 }
 
 pub(super) fn matches_config_name_prefix(name: &str, pattern: &str) -> bool {

@@ -42,6 +42,11 @@
 //! unrelated helper shells from inheriting a project's framework label just
 //! because their working directory happens to be inside that project.
 //!
+//! Config labels are also ecosystem-aware: a known runtime or tool accepts
+//! only config labels from its own ecosystem. In a Laravel project with
+//! `vite.config.js`, `php` is `Laravel` and `node` is `Vite`; a `python`
+//! process in a Next.js folder stays `Python`.
+//!
 //! # Scope
 //!
 //! This crate only detects labels. It does not discover running processes,
@@ -74,6 +79,7 @@
 
 mod config;
 mod detector;
+mod ecosystem;
 mod image;
 mod process;
 mod project;
@@ -104,7 +110,7 @@ mod tests {
 
         process::PROCESS_MAP
             .iter()
-            .map(|(_, label)| label)
+            .map(|(_, label, _)| label)
             .chain(image::EXACT_IMAGE_RULES.iter().map(|(_, label)| label))
             .chain(image::PREFIX_IMAGE_RULES.iter().map(|(_, label)| label))
             .chain(STANDALONE.iter())

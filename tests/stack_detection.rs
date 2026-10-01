@@ -595,6 +595,14 @@ fn executable_inside_project_ignores_case_on_windows() {
     assert_eq!(text(label), Some("Next.js"));
 }
 
+fn detect_with(
+    detector: &mut StackDetector,
+    process: &str,
+    project_root: &Path,
+) -> Option<&'static str> {
+    text(detector.detect_stack(StackInput::new(process).project_root(project_root)))
+}
+
 #[test]
 fn image_prefix_rules_reject_companion_images_and_non_boundary_names() {
     for image in [
@@ -702,6 +710,194 @@ fn process_detection_strips_runtime_versions_and_matches_truncated_titles() {
     let image_kind = |image: &str| detect_from_image(image).map(|label| label.kind());
     assert_eq!(image_kind("apache/kafka"), Some(StackKind::Service));
     assert_eq!(image_kind("postgis/postgis"), Some(StackKind::Database));
+}
+
+#[test]
+fn config_precedence_follows_the_process_ecosystem() {
+    let laravel = TempDir::new().expect("temp dir");
+    for file in ["composer.json", "artisan", "package.json", "vite.config.js"] {
+        write_file(laravel.path(), file, "");
+    }
+
+    let django_vite = TempDir::new().expect("temp dir");
+    write_file(django_vite.path(), "manage.py", "");
+    write_file(
+        django_vite.path(),
+        "requirements.txt",
+        "django\ndjango-vite\n",
+    );
+    write_file(django_vite.path(), "package.json", "{}");
+    write_file(django_vite.path(), "vite.config.ts", "");
+
+    let vite_rails = TempDir::new().expect("temp dir");
+    for file in ["Gemfile", "config.ru", "bin/rails", "package.json"] {
+        write_file(vite_rails.path(), file, "");
+    }
+    write_file(vite_rails.path(), "vite.config.ts", "");
+
+    let mut detector = StackDetector::new();
+    for (process, root, expected) in [
+        ("php", laravel.path(), "Laravel"),
+        ("php-fpm8.2", laravel.path(), "Laravel"),
+        ("node", laravel.path(), "Vite"),
+        ("vite", laravel.path(), "Vite"),
+        ("php", laravel.path(), "Laravel"),
+        ("python3", django_vite.path(), "Django"),
+        ("gunicorn", django_vite.path(), "Django"),
+        ("node", django_vite.path(), "Vite"),
+        ("ruby", vite_rails.path(), "Rails"),
+        ("puma", vite_rails.path(), "Rails"),
+        ("bun", vite_rails.path(), "Vite"),
+    ] {
+        assert_eq!(
+            detect_with(&mut detector, process, root),
+            Some(expected),
+            "{process} in {}",
+            root.display()
+        );
+    }
+
+    // Unknown processes keep the documented fixed order.
+    assert_eq!(text(detect_from_config(laravel.path())), Some("Vite"));
+}
+
+#[test]
+fn config_runtime_labels_do_not_replace_a_different_process_runtime() {
+    let node_deno = TempDir::new().expect("temp dir");
+    write_file(node_deno.path(), "package.json", "{}");
+    write_file(node_deno.path(), "deno.json", "{}");
+
+    let plain_python = TempDir::new().expect("temp dir");
+    write_file(
+        plain_python.path(),
+        "requirements.txt",
+        "requests
+",
+    );
+
+    let flask = TempDir::new().expect("temp dir");
+    write_file(
+        flask.path(),
+        "requirements.txt",
+        "flask
+",
+    );
+
+    let mut detector = StackDetector::new();
+    for (process, root, expected) in [
+        ("node", node_deno.path(), "Node.js"),
+        ("bun", node_deno.path(), "Bun"),
+        ("deno", node_deno.path(), "Deno"),
+        ("gunicorn", plain_python.path(), "Gunicorn"),
+        ("uvicorn", plain_python.path(), "Uvicorn"),
+        ("gunicorn: maste", plain_python.path(), "Gunicorn"),
+        ("python3", plain_python.path(), "Python"),
+        ("gunicorn", flask.path(), "Flask"),
+    ] {
+        assert_eq!(
+            detect_with(&mut detector, process, root),
+            Some(expected),
+            "{process} in {}",
+            root.display()
+        );
+    }
+
+    // Unknown processes still get the config labels.
+    assert_eq!(text(detect_from_config(node_deno.path())), Some("Deno"));
+    assert_eq!(
+        text(detect_from_config(plain_python.path())),
+        Some("Python")
+    );
+}
+
+#[test]
+fn known_runtimes_ignore_config_labels_from_other_ecosystems() {
+    let next = TempDir::new().expect("temp dir");
+    write_file(next.path(), "next.config.js", "");
+    write_file(next.path(), "package.json", "{}");
+
+    let go = TempDir::new().expect("temp dir");
+    write_file(go.path(), "go.mod", "");
+
+    let mut detector = StackDetector::new();
+    assert_eq!(
+        detect_with(&mut detector, "python", next.path()),
+        Some("Python")
+    );
+    assert_eq!(detect_with(&mut detector, "php", next.path()), Some("PHP"));
+    assert_eq!(
+        detect_with(&mut detector, "deno", next.path()),
+        Some("Next.js")
+    );
+    assert_eq!(
+        detect_with(&mut detector, "node", go.path()),
+        Some("Node.js")
+    );
+    assert_eq!(detect_with(&mut detector, "go", go.path()), Some("Go"));
+}
+
+#[test]
+fn laravel_and_rails_config_detection() {
+    let laravel = TempDir::new().expect("temp dir");
+    write_file(laravel.path(), "composer.json", "{}");
+    write_file(laravel.path(), "artisan", "");
+    let laravel_label = detect_from_config(laravel.path()).expect("laravel");
+    assert_eq!(laravel_label, "Laravel");
+    assert_eq!(laravel_label.kind(), StackKind::Framework);
+
+    let plain_php = TempDir::new().expect("temp dir");
+    write_file(plain_php.path(), "composer.json", "{}");
+    assert_eq!(text(detect_from_config(plain_php.path())), Some("PHP"));
+
+    let rails = TempDir::new().expect("temp dir");
+    for file in ["Gemfile", "config.ru", "bin/rails"] {
+        write_file(rails.path(), file, "");
+    }
+    let rails_label = detect_from_config(rails.path()).expect("rails");
+    assert_eq!(rails_label, "Rails");
+    assert_eq!(rails_label.kind(), StackKind::Framework);
+
+    let gemfile_only = TempDir::new().expect("temp dir");
+    write_file(gemfile_only.path(), "Gemfile", "");
+    assert_eq!(detect_from_config(gemfile_only.path()), None);
+}
+
+#[test]
+fn stray_python_entry_file_does_not_relabel_node_projects() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(project.path(), "package.json", "{}");
+    write_file(
+        project.path(),
+        "server.py",
+        "from flask import Flask\napp = Flask(__name__)\n",
+    );
+
+    assert_eq!(detect_from_config(project.path()), None);
+
+    let mut detector = StackDetector::new();
+    assert_eq!(
+        detect_with(&mut detector, "node", project.path()),
+        Some("Node.js")
+    );
+    assert_eq!(
+        detect_with(&mut detector, "python3", project.path()),
+        Some("Flask"),
+        "a Python process may still use the entry file"
+    );
+
+    let python_only = TempDir::new().expect("temp dir");
+    write_file(python_only.path(), "app.py", "print('hello')\n");
+    assert_eq!(
+        detect_with(&mut detector, "node", python_only.path()),
+        Some("Node.js")
+    );
+
+    write_file(project.path(), "requirements.txt", "requests\n");
+    assert_eq!(
+        text(detect_from_config(project.path())),
+        Some("Flask"),
+        "a Python dependency file makes it a mixed project again"
+    );
 }
 
 #[test]

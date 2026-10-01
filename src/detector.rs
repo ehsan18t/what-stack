@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::config;
+use crate::ecosystem::Ecosystem;
 use crate::image::detect_from_image;
 use crate::process::find_process_rule_by_names;
 use crate::project::{has_marker, path_starts_with, project_root_candidates, walk_ancestors};
@@ -40,6 +41,17 @@ use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 ///    path lies inside the project root.
 /// 4. The process label, if any.
 ///
+/// Config detection is ecosystem-aware. A known runtime or tool accepts only
+/// config labels from its own ecosystem: a `php` or `php-fpm` process in a
+/// Laravel project that also has `vite.config.js` is `Laravel`, a `node` or
+/// `vite` process there is `Vite`, and a `python` process in a Next.js project
+/// stays `Python`. Deno config has its own ecosystem, so a `node` or `bun`
+/// process next to `deno.json` keeps its label, while a `deno` process also
+/// accepts Node config. A Python process takes only framework labels from
+/// config, so `gunicorn` in a Python project with no recognized framework
+/// stays `Gunicorn`. An unknown process uses every rule, in the order of
+/// [`crate::detect_from_config`].
+///
 /// # Examples
 ///
 /// ```
@@ -54,8 +66,12 @@ use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 pub struct StackDetector {
     home: Option<PathBuf>,
     project_cache: HashMap<PathBuf, Option<PathBuf>>,
-    config_cache: HashMap<PathBuf, Option<StackLabel>>,
+    /// Config results per project root, one entry per process ecosystem seen
+    /// (`None` for unknown processes).
+    config_cache: HashMap<PathBuf, Vec<ConfigCacheEntry>>,
 }
+
+type ConfigCacheEntry = (Option<Ecosystem>, Option<StackLabel>);
 
 impl Default for StackDetector {
     /// Same as [`StackDetector::new`].
@@ -138,12 +154,13 @@ impl StackDetector {
             return Some(label);
         }
 
-        let process_stack =
-            find_process_rule_by_names(input.process_name, input.exe_name).map(|(_, label)| label);
+        let process_rule = find_process_rule_by_names(input.process_name, input.exe_name);
+        let process_stack = process_rule.map(|(_, label, _)| label);
 
         if let Some(project_root) = input.project_root
             && config_detection_allowed(process_stack, input.exe_path, project_root)
-            && let Some(label) = self.cached_config_stack(project_root)
+            && let Some(label) =
+                self.cached_config_stack(project_root, process_rule.map(|(_, _, eco)| *eco))
         {
             return Some(label);
         }
@@ -180,14 +197,24 @@ impl StackDetector {
         None
     }
 
-    fn cached_config_stack(&mut self, project_root: &Path) -> Option<StackLabel> {
-        if let Some(cached) = self.config_cache.get(project_root) {
+    fn cached_config_stack(
+        &mut self,
+        project_root: &Path,
+        ecosystem: Option<Ecosystem>,
+    ) -> Option<StackLabel> {
+        if let Some((_, cached)) = self
+            .config_cache
+            .get(project_root)
+            .and_then(|entries| entries.iter().find(|(seen, _)| *seen == ecosystem))
+        {
             return cached.clone();
         }
 
-        let result = config::detect_from_config(project_root);
+        let result = config::detect_for_ecosystem(project_root, ecosystem);
         self.config_cache
-            .insert(project_root.to_path_buf(), result.clone());
+            .entry(project_root.to_path_buf())
+            .or_default()
+            .push((ecosystem, result.clone()));
         result
     }
 }
