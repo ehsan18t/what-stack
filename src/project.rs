@@ -83,7 +83,8 @@ pub fn project_root_candidates(input: ProjectInput<'_>) -> impl Iterator<Item = 
 ///
 /// `home` is an optional ceiling. When the walk reaches `home`, it stops before
 /// testing that directory for markers. This avoids accidental matches from
-/// marker files stored directly in a user's home directory.
+/// marker files stored directly in a user's home directory. On Windows the
+/// ceiling comparison ignores ASCII case, matching the file system.
 ///
 /// At most [`MAX_WALK_DEPTH`] directories are tested, starting with `start`.
 ///
@@ -134,7 +135,7 @@ pub fn walk_ancestors<'a>(
         }
 
         if let Some(home_dir) = home
-            && dir == home_dir
+            && paths_equal(&dir, home_dir)
         {
             current = None;
             return None;
@@ -179,12 +180,58 @@ pub fn has_marker(dir: &Path) -> bool {
     })
 }
 
+/// Compare two paths component by component.
+///
+/// Windows file systems are case-insensitive, so components are compared
+/// ignoring ASCII case there. Other platforms compare exactly.
+pub fn paths_equal(left: &Path, right: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let mut left = left.components();
+        let mut right = right.components();
+        loop {
+            match (left.next(), right.next()) {
+                (None, None) => return true,
+                (Some(a), Some(b)) if components_equal(a, b) => {}
+                _ => return false,
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
+}
+
+/// Return whether `path` lies at or below `prefix`, comparing whole components
+/// with the same case rules as [`paths_equal`].
+pub fn path_starts_with(path: &Path, prefix: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let mut path = path.components();
+        prefix.components().all(|expected| {
+            path.next()
+                .is_some_and(|actual| components_equal(actual, expected))
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        path.starts_with(prefix)
+    }
+}
+
+#[cfg(windows)]
+fn components_equal(left: std::path::Component<'_>, right: std::path::Component<'_>) -> bool {
+    left.as_os_str().eq_ignore_ascii_case(right.as_os_str())
+}
+
 /// Return the current user's home directory, when it can be determined.
 ///
 /// On Unix, this prefers passwd-database lookup for the invoking user. During
 /// `sudo` sessions it uses `SUDO_UID` to find the original user's home, falling
 /// back to `SUDO_HOME` and then `HOME` when passwd lookup is unavailable. On
-/// Windows, it reads `USERPROFILE`.
+/// Windows, it reads `USERPROFILE`. On other targets (for example `wasm32`), it
+/// returns `None`.
 ///
 /// [`StackDetector::new`](crate::StackDetector::new) calls this once to set its
 /// home ceiling. Callers of [`find_project_root`] or [`resolve_project_root`]
@@ -202,6 +249,10 @@ pub fn home_dir() -> Option<PathBuf> {
     #[cfg(windows)]
     {
         std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        None
     }
 }
 
@@ -292,5 +343,43 @@ fn passwd_buffer_len() -> usize {
     match unsafe { libc::sysconf(libc::_SC_GETPW_R_SIZE_MAX) } {
         size if size > 0 => usize::try_from(size).unwrap_or(DEFAULT_PASSWD_BUFFER_LEN),
         _ => DEFAULT_PASSWD_BUFFER_LEN,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_helpers_match_exact_paths_and_whole_component_prefixes() {
+        let root = Path::new("/workspace/app");
+        assert!(paths_equal(root, Path::new("/workspace/app")));
+        assert!(!paths_equal(root, Path::new("/workspace/app/src")));
+        assert!(!paths_equal(root, Path::new("/workspace")));
+        assert!(path_starts_with(Path::new("/workspace/app/bin/x"), root));
+        assert!(path_starts_with(root, root));
+        assert!(!path_starts_with(Path::new("/workspace/application"), root));
+        assert!(!path_starts_with(Path::new("/workspace"), root));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn path_helpers_ignore_ascii_case_on_windows() {
+        let root = Path::new(r"C:\Users\Dev\App");
+        assert!(paths_equal(root, Path::new(r"c:\users\dev\app")));
+        assert!(paths_equal(root, Path::new("c:/USERS/dev/app")));
+        assert!(path_starts_with(
+            Path::new(r"c:\USERS\dev\app\bin\x.exe"),
+            root
+        ));
+        assert!(!path_starts_with(Path::new(r"c:\users\dev\apps"), root));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn path_helpers_are_case_sensitive_off_windows() {
+        let root = Path::new("/home/dev/App");
+        assert!(!paths_equal(root, Path::new("/home/dev/app")));
+        assert!(!path_starts_with(Path::new("/home/dev/app/bin"), root));
     }
 }

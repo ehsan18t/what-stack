@@ -555,3 +555,42 @@ fn stack_detector_caches_project_and_config_detection_results() {
     assert_eq!(detector.detect_project_root(input), None);
     assert_eq!(text(detector.detect_stack(stack_input)), Some("Node.js"));
 }
+
+#[cfg(windows)]
+fn upper_case_path(path: &Path) -> PathBuf {
+    PathBuf::from(path.to_string_lossy().to_uppercase())
+}
+
+#[cfg(windows)]
+#[test]
+fn home_ceiling_ignores_case_on_windows() {
+    let fake_home = TempDir::new().expect("temp dir");
+    write_file(fake_home.path(), "package.json", "{}");
+    let unrelated = upper_case_path(&fake_home.path().join("unrelated"));
+    std::fs::create_dir_all(&unrelated).expect("create unrelated dir");
+
+    assert_eq!(find_project_root(&unrelated, Some(fake_home.path())), None);
+
+    let mut detector = StackDetector::with_home(Some(fake_home.path().to_path_buf()));
+    assert_eq!(
+        detector.detect_project_root(ProjectInput::new().cwd(unrelated.as_path())),
+        None
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn executable_inside_project_ignores_case_on_windows() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(project.path(), "next.config.js", "");
+    write_file(project.path(), "bin/my-app.exe", "");
+    let exe_path = upper_case_path(&project.path().join("bin").join("my-app.exe"));
+
+    let mut detector = StackDetector::new();
+    let label = detector.detect_stack(
+        StackInput::new("my-app.exe")
+            .exe_path(exe_path.as_path())
+            .project_root(project.path()),
+    );
+    assert_eq!(text(label), Some("Next.js"));
+}

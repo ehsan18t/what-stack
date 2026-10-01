@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use crate::config;
 use crate::image::detect_from_image;
 use crate::process::find_process_rule_by_names;
-use crate::project::{has_marker, project_root_candidates, walk_ancestors};
+use crate::project::{has_marker, path_starts_with, project_root_candidates, walk_ancestors};
 use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 
 /// Cache-owning detector for repeated stack and project lookups.
@@ -199,7 +199,7 @@ fn config_detection_allowed(
     project_root: &Path,
 ) -> bool {
     process_stack.map_or_else(
-        || exe_path.is_some_and(|path| path.starts_with(project_root)),
+        || exe_path.is_some_and(|path| path_starts_with(path, project_root)),
         |label| accepts_config_override(label.kind()),
     )
 }
