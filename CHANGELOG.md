@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-## [0.1.0] - Unreleased
+## [0.1.0] - 2026-10-01
 
 Initial release. `what-stack` is a dependency-light library that detects project roots and technology stacks from generic inputs, with no async runtime, regex engine, logging facade, or subprocesses.
 
