@@ -594,3 +594,39 @@ fn executable_inside_project_ignores_case_on_windows() {
     );
     assert_eq!(text(label), Some("Next.js"));
 }
+
+#[test]
+fn config_files_with_non_utf8_text_are_still_scanned() {
+    let little_endian = TempDir::new().expect("temp dir");
+    let mut bytes = vec![0xFF, 0xFE];
+    bytes.extend("Flask==3.0.3\r\n".encode_utf16().flat_map(u16::to_le_bytes));
+    std::fs::write(little_endian.path().join("requirements.txt"), bytes).expect("write");
+    assert_eq!(
+        text(detect_from_config(little_endian.path())),
+        Some("Flask")
+    );
+
+    let big_endian = TempDir::new().expect("temp dir");
+    let mut bytes = vec![0xFE, 0xFF];
+    bytes.extend("fastapi\n".encode_utf16().flat_map(u16::to_be_bytes));
+    std::fs::write(big_endian.path().join("requirements.txt"), bytes).expect("write");
+    assert_eq!(text(detect_from_config(big_endian.path())), Some("FastAPI"));
+
+    let latin1 = TempDir::new().expect("temp dir");
+    std::fs::write(
+        latin1.path().join("main.py"),
+        b"# caf\xe9\nfrom flask import Flask\napp = Flask(__name__)\n",
+    )
+    .expect("write");
+    assert_eq!(text(detect_from_config(latin1.path())), Some("Flask"));
+
+    // A two-byte character straddles the 64 KiB read cap.
+    let split = TempDir::new().expect("temp dir");
+    let mut contents = String::from("django==5.1\n# ");
+    while contents.len() < 64 * 1024 - 1 {
+        contents.push('x');
+    }
+    contents.push_str("\u{e9}\n");
+    write_file(split.path(), "requirements.txt", &contents);
+    assert_eq!(text(detect_from_config(split.path())), Some("Django"));
+}

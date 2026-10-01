@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 use std::ffi::OsStr;
+use std::fs::File;
+use std::io::{self, Read};
 use std::path::Path;
 
 #[derive(Debug)]
@@ -41,18 +43,149 @@ impl ProjectFiles {
         })
     }
 
+    /// Read the first [`MAX_SCAN_BYTES`] of a project file as text.
+    ///
+    /// Returns `None` when the name is not in the listing, is not a regular
+    /// file, or cannot be read. Undecodable bytes become U+FFFD instead of
+    /// failing the read, so one Latin-1 comment or a UTF-8 character split at
+    /// the cap does not hide the rest of the file.
     pub(super) fn read_text(&self, project_root: &Path, file_name: &str) -> Option<String> {
-        use std::io::Read;
-
-        const MAX_SCAN_BYTES: u64 = 64 * 1024;
-
         if !self.contains_exact(file_name) {
             return None;
         }
 
-        let file = std::fs::File::open(project_root.join(file_name)).ok()?;
-        let mut buffer = String::new();
-        file.take(MAX_SCAN_BYTES).read_to_string(&mut buffer).ok()?;
-        Some(buffer)
+        read_regular_file_prefix(&project_root.join(file_name)).map(decode_text)
+    }
+}
+
+/// Maximum number of bytes read from one project file.
+const MAX_SCAN_BYTES: u64 = 64 * 1024;
+
+/// Read up to [`MAX_SCAN_BYTES`] from `path` only when it is a regular file.
+///
+/// A FIFO (or a symlink to `/dev/tty`) under a scanned name such as `app.py`
+/// would block a plain `open` forever. The type is checked before opening, the
+/// open is non-blocking on Unix, and the opened handle is checked again, which
+/// closes the race where the path is swapped between the two checks.
+fn read_regular_file_prefix(path: &Path) -> Option<Vec<u8>> {
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
+
+    let file = open_for_scan(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
+        return None;
+    }
+
+    let mut bytes = Vec::new();
+    file.take(MAX_SCAN_BYTES).read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+#[cfg(unix)]
+fn open_for_scan(path: &Path) -> io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    // O_NONBLOCK makes opening a FIFO return at once; it has no effect on
+    // reads from regular files.
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open_for_scan(path: &Path) -> io::Result<File> {
+    File::open(path)
+}
+
+/// Decode file bytes to text without failing.
+///
+/// UTF-16 files with a byte-order mark (for example `pip freeze >` output from
+/// Windows PowerShell 5.1) are decoded as UTF-16. Everything else is decoded
+/// as UTF-8, replacing invalid sequences.
+fn decode_text(bytes: Vec<u8>) -> String {
+    match bytes.as_slice() {
+        [0xFF, 0xFE, rest @ ..] => decode_utf16(rest, u16::from_le_bytes),
+        [0xFE, 0xFF, rest @ ..] => decode_utf16(rest, u16::from_be_bytes),
+        _ => String::from_utf8(bytes)
+            .unwrap_or_else(|error| String::from_utf8_lossy(error.as_bytes()).into_owned()),
+    }
+}
+
+fn decode_utf16(bytes: &[u8], unit_from_bytes: fn([u8; 2]) -> u16) -> String {
+    let (pairs, _odd_trailing_byte) = bytes.as_chunks::<2>();
+    let units = pairs.iter().copied().map(unit_from_bytes);
+
+    char::decode_utf16(units)
+        .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn utf16_with_bom(text: &str, bom: [u8; 2], to_bytes: fn(u16) -> [u8; 2]) -> Vec<u8> {
+        bom.into_iter()
+            .chain(text.encode_utf16().flat_map(to_bytes))
+            .collect()
+    }
+
+    #[test]
+    fn decode_text_reads_utf16_with_byte_order_mark() {
+        let little = utf16_with_bom("Flask==3.0\r\n", [0xFF, 0xFE], u16::to_le_bytes);
+        assert_eq!(decode_text(little), "Flask==3.0\r\n");
+
+        let big = utf16_with_bom("fastapi\n", [0xFE, 0xFF], u16::to_be_bytes);
+        assert_eq!(decode_text(big), "fastapi\n");
+    }
+
+    #[test]
+    fn decode_text_replaces_invalid_utf8_instead_of_failing() {
+        assert_eq!(decode_text(b"caf\xe9 flask".to_vec()), "caf\u{fffd} flask");
+        assert_eq!(
+            decode_text(vec![b'a', 0xC3]),
+            "a\u{fffd}",
+            "a character split at the read cap"
+        );
+        assert_eq!(decode_text(b"plain".to_vec()), "plain");
+    }
+
+    #[cfg(unix)]
+    fn make_fifo(path: &Path) {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+
+        let c_path = CString::new(path.as_os_str().as_bytes()).expect("path has no nul byte");
+        // Safety: `c_path` is a valid nul-terminated string for the whole call.
+        let status = unsafe { libc::mkfifo(c_path.as_ptr(), 0o644) };
+        assert_eq!(status, 0, "mkfifo {}", path.display());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fifos_with_project_file_names_are_skipped_without_blocking() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        make_fifo(&dir.path().join("app.py"));
+        make_fifo(&dir.path().join("requirements.txt"));
+
+        let root = dir.path().to_path_buf();
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let files = ProjectFiles::read(&root).expect("read project dir");
+            let text = files.read_text(&root, "app.py");
+            let label = crate::detect_from_config(&root);
+            sender.send((text, label)).expect("receiver is waiting");
+        });
+
+        let (text, label) = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("reading a FIFO must not block");
+        assert_eq!(text, None, "a FIFO is not a regular file");
+        assert_eq!(label.expect("Python markers are still listed"), "Python");
     }
 }
