@@ -655,6 +655,56 @@ fn image_prefix_rules_keep_service_images_and_variants() {
 }
 
 #[test]
+fn process_detection_strips_runtime_versions_and_matches_truncated_titles() {
+    for (process, expected) in [
+        ("python3.12", "Python"),
+        ("PYTHON3.12.EXE", "Python"),
+        ("pythonw.exe", "Python"),
+        ("php8.2", "PHP"),
+        ("php-fpm", "PHP"),
+        ("php-fpm8.2", "PHP"),
+        ("ruby3.2", "Ruby"),
+        ("node20", "Node.js"),
+        ("javaw.exe", "Java"),
+        ("puma", "Puma"),
+        ("puma 6.4.2 (tc", "Puma"),
+        ("puma: cluster w", "Puma"),
+        ("gunicorn: maste", "Gunicorn"),
+        ("gunicorn: worke", "Gunicorn"),
+        ("next-server (v1", "Next.js"),
+        ("w3wp.exe", "IIS"),
+        ("sqlservr.exe", "SQL Server"),
+    ] {
+        assert_eq!(
+            text(detect_from_process(process)),
+            Some(expected),
+            "process {process}"
+        );
+    }
+
+    for process in [
+        "postgres14",
+        "node-exporter2",
+        "python.",
+        "3.12",
+        "next-server-x",
+        "gunicorn-x: a",
+        "MySQL Workbench.exe",
+    ] {
+        assert_eq!(detect_from_process(process), None, "process {process}");
+    }
+
+    let kind = |name: &str| detect_from_process(name).map(|label| label.kind());
+    assert_eq!(kind("puma"), Some(StackKind::Runtime));
+    assert_eq!(kind("w3wp"), Some(StackKind::Service));
+    assert_eq!(kind("sqlservr"), Some(StackKind::Database));
+
+    let image_kind = |image: &str| detect_from_image(image).map(|label| label.kind());
+    assert_eq!(image_kind("apache/kafka"), Some(StackKind::Service));
+    assert_eq!(image_kind("postgis/postgis"), Some(StackKind::Database));
+}
+
+#[test]
 fn config_files_with_non_utf8_text_are_still_scanned() {
     let little_endian = TempDir::new().expect("temp dir");
     let mut bytes = vec![0xFF, 0xFE];
@@ -688,4 +738,34 @@ fn config_files_with_non_utf8_text_are_still_scanned() {
     contents.push_str("\u{e9}\n");
     write_file(split.path(), "requirements.txt", &contents);
     assert_eq!(text(detect_from_config(split.path())), Some("Django"));
+}
+
+#[test]
+fn new_project_markers_resolve_roots_and_config_labels() {
+    for marker in ["bun.lock", "deno.jsonc", "go.work", "setup.py", "Pipfile"] {
+        let project = TempDir::new().expect("temp dir");
+        write_file(project.path(), marker, "");
+        let nested = project.path().join("src");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+        assert_eq!(
+            find_project_root(&nested, None).as_deref(),
+            Some(project.path()),
+            "marker {marker}"
+        );
+    }
+
+    for (marker, expected) in [
+        ("deno.jsonc", "Deno"),
+        ("go.work", "Go"),
+        ("setup.py", "Python"),
+        ("Pipfile", "Python"),
+    ] {
+        let project = TempDir::new().expect("temp dir");
+        write_file(project.path(), marker, "");
+        assert_eq!(
+            text(detect_from_config(project.path())),
+            Some(expected),
+            "marker {marker}"
+        );
+    }
 }

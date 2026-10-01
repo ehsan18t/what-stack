@@ -67,6 +67,7 @@ pub const CONFIG_PATTERNS: &[(&str, StackLabel, ConfigMatchKind)] = &[
         ConfigMatchKind::Exact,
     ),
     ("go.mod", StackLabel::runtime("Go"), ConfigMatchKind::Exact),
+    ("go.work", StackLabel::runtime("Go"), ConfigMatchKind::Exact),
     (
         "pom.xml",
         StackLabel::tool("Java (Maven)"),
@@ -94,6 +95,11 @@ pub const CONFIG_PATTERNS: &[(&str, StackLabel, ConfigMatchKind)] = &[
     ),
     (
         "deno.json",
+        StackLabel::runtime("Deno"),
+        ConfigMatchKind::Exact,
+    ),
+    (
+        "deno.jsonc",
         StackLabel::runtime("Deno"),
         ConfigMatchKind::Exact,
     ),

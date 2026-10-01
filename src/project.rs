@@ -19,8 +19,11 @@ const PROJECT_MARKERS: &[&str] = &[
     "package.json",
     "Cargo.toml",
     "go.mod",
+    "go.work",
     "pyproject.toml",
     "requirements.txt",
+    "setup.py",
+    "Pipfile",
     "pom.xml",
     "build.gradle",
     "build.gradle.kts",
@@ -28,7 +31,9 @@ const PROJECT_MARKERS: &[&str] = &[
     "Gemfile",
     "mix.exs",
     "deno.json",
+    "deno.jsonc",
     "bun.lockb",
+    "bun.lock",
 ];
 
 const PROJECT_MARKER_EXTENSIONS: &[&str] = &["csproj", "fsproj"];
