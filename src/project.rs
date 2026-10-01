@@ -387,4 +387,61 @@ mod tests {
         assert!(!paths_equal(root, Path::new("/home/dev/app")));
         assert!(!path_starts_with(Path::new("/home/dev/app/bin"), root));
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn preferred_home_uid_from_env_prefers_sudo_uid_for_root_sessions() {
+        assert_eq!(
+            preferred_home_uid_from_env(Some(OsStr::new("1000")), 0),
+            Some(1000),
+            "sudo sessions should prefer the invoking user's uid"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preferred_home_uid_from_env_ignores_sudo_uid_for_non_root_sessions() {
+        assert_eq!(
+            preferred_home_uid_from_env(Some(OsStr::new("1000")), 2000),
+            Some(2000),
+            "non-root sessions should keep the current effective uid"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preferred_home_uid_from_env_falls_back_when_sudo_uid_is_invalid() {
+        assert_eq!(
+            preferred_home_uid_from_env(Some(OsStr::new("not-a-uid")), 0),
+            Some(0),
+            "invalid sudo metadata should not break home-directory lookup"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn select_home_dir_prefers_passwd_lookup_over_sudo_home() {
+        let passwd_home = Some(PathBuf::from("/home/invoking-user"));
+        let sudo_home = Some(PathBuf::from("/root"));
+        let env_home = Some(PathBuf::from("/tmp/fallback"));
+
+        assert_eq!(
+            select_home_dir(passwd_home.clone(), sudo_home, env_home),
+            passwd_home,
+            "passwd-database resolution should win over environment-derived sudo home"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn select_home_dir_falls_back_to_sudo_home_before_home_env() {
+        let sudo_home = Some(PathBuf::from("/home/invoking-user"));
+        let env_home = Some(PathBuf::from("/root"));
+
+        assert_eq!(
+            select_home_dir(None, sudo_home.clone(), env_home),
+            sudo_home,
+            "sudo home should remain the fallback when passwd lookup is unavailable"
+        );
+    }
 }

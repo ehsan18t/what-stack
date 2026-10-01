@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 use what_stack::{
-    ProjectInput, StackDetector, StackInput, StackKind, StackLabel, detect_from_config,
-    detect_from_image, detect_from_process, detect_from_process_names, find_project_root,
-    project_name, resolve_project_root,
+    MAX_WALK_DEPTH, ProjectInput, StackDetector, StackInput, StackKind, StackLabel,
+    detect_from_config, detect_from_image, detect_from_process, detect_from_process_names,
+    find_project_root, project_name, resolve_project_root,
 };
 
 /// Label text for assertions. Built-in labels are static, so this also checks
@@ -268,12 +268,51 @@ fn project_detection_returns_none_without_markers_and_respects_depth_limit() {
     write_file(project.path(), "package.json", "{}");
 
     let mut deep = project.path().to_path_buf();
-    for index in 0..=64 {
+    for index in 0..MAX_WALK_DEPTH {
         deep = deep.join(format!("d{index}"));
     }
     std::fs::create_dir_all(&deep).expect("create deep dir");
 
-    assert_eq!(find_project_root(&deep, None), None);
+    assert_eq!(
+        find_project_root(&deep, None),
+        None,
+        "walk should stop after MAX_WALK_DEPTH directories"
+    );
+}
+
+#[test]
+fn walk_finds_marker_at_max_depth_boundary() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(project.path(), "package.json", "{}");
+
+    let mut deep = project.path().to_path_buf();
+    for index in 0..MAX_WALK_DEPTH - 1 {
+        deep = deep.join(format!("d{index}"));
+    }
+    std::fs::create_dir_all(&deep).expect("create deep dir");
+
+    assert_eq!(
+        find_project_root(&deep, None).as_deref(),
+        Some(project.path()),
+        "walk should still find a marker at the depth boundary"
+    );
+}
+
+#[test]
+fn project_detection_accepts_csproj_extension_marker() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(project.path(), "MyApp.csproj", "");
+    let nested = project.path().join("Controllers");
+    std::fs::create_dir_all(&nested).expect("create nested dir");
+
+    assert_eq!(
+        find_project_root(project.path(), None).as_deref(),
+        Some(project.path())
+    );
+    assert_eq!(
+        find_project_root(&nested, None).as_deref(),
+        Some(project.path())
+    );
 }
 
 #[test]

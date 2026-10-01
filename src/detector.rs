@@ -250,6 +250,80 @@ mod tests {
         fs::write(dir.join(name), "").expect("write marker");
     }
 
+    fn assert_cached_root(detector: &StackDetector, path: &Path, expected: &Path, message: &str) {
+        assert_eq!(
+            detector.project_cache.get(path).and_then(Option::as_deref),
+            Some(expected),
+            "{message}"
+        );
+    }
+
+    #[test]
+    fn project_root_cache_learns_visited_ancestors() {
+        let root = TempDir::new().expect("temp dir");
+        write_marker(root.path(), "Cargo.toml");
+
+        let first = root.path().join("src").join("db");
+        let second = root.path().join("src").join("utils");
+        fs::create_dir_all(&first).expect("create first dir");
+        fs::create_dir_all(&second).expect("create second dir");
+
+        let mut detector = StackDetector::new();
+
+        let first_result = detector.detect_project_root(ProjectInput::new().cwd(first.as_path()));
+        assert_eq!(first_result.as_deref(), Some(root.path()));
+        assert_cached_root(
+            &detector,
+            &first,
+            root.path(),
+            "the original cwd should be cached",
+        );
+        assert_cached_root(
+            &detector,
+            first.parent().expect("first has parent"),
+            root.path(),
+            "visited ancestors should also be cached",
+        );
+
+        let second_result = detector.detect_project_root(ProjectInput::new().cwd(second.as_path()));
+        assert_eq!(second_result.as_deref(), Some(root.path()));
+        assert_cached_root(
+            &detector,
+            &second,
+            root.path(),
+            "sibling directories should learn from the cached ancestor",
+        );
+    }
+
+    #[test]
+    fn project_root_cache_does_not_poison_unrelated_ancestors() {
+        let workspace = TempDir::new().expect("temp dir");
+        let outer = workspace.path().join("workspace");
+        let project_root = outer.join("app");
+        let inside = project_root.join("src").join("db");
+        let unrelated = outer.join("services").join("worker");
+
+        fs::create_dir_all(&inside).expect("create inside dir");
+        fs::create_dir_all(&unrelated).expect("create unrelated dir");
+        write_marker(&project_root, "Cargo.toml");
+
+        let mut detector = StackDetector::new();
+
+        let first_result = detector.detect_project_root(ProjectInput::new().cwd(inside.as_path()));
+        assert_eq!(first_result.as_deref(), Some(project_root.as_path()));
+        assert!(
+            !detector.project_cache.contains_key(outer.as_path()),
+            "ancestors above the discovered project root must not be cached as project hits"
+        );
+
+        let unrelated_result =
+            detector.detect_project_root(ProjectInput::new().cwd(unrelated.as_path()));
+        assert!(
+            unrelated_result.is_none(),
+            "an unrelated path under the same ancestor must not inherit another project's root"
+        );
+    }
+
     #[test]
     fn clear_drops_cached_results_but_keeps_home() {
         let project = TempDir::new().expect("temp dir");
