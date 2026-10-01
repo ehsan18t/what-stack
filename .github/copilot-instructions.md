@@ -9,7 +9,8 @@ overrides it.
 | ----- | ----- |
 | Language | Rust edition 2024 |
 | Type | Library crate |
-| Platform | Linux x86-64 and Windows x86-64 |
+| Platform | Linux x86-64 and Windows x86-64 (macOS also tested in CI) |
+| MSRV | Rust 1.88 (`rust-version` in Cargo.toml) |
 | License | MIT |
 | Repository | https://github.com/ehsan18t/what-stack |
 

@@ -49,10 +49,23 @@ jobs:
 
       - name: Verify Cargo.toml version matches
         run: |
-          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
-          if [ "$cargo_version" != "$VERSION" ]; then
-            echo "::warning::Cargo.toml version ($cargo_version) does not match release version ($VERSION)."
+          # Read version only from the [package] table, so dependency or
+          # profile tables that also contain a version key are ignored.
+          cargo_version=$(awk '
+            /^[[:space:]]*\[/ { in_package = ($0 ~ /^[[:space:]]*\[package\][[:space:]]*(#.*)?$/); next }
+            in_package && /^[[:space:]]*version[[:space:]]*=/ {
+              sub(/^[^"]*"/, ""); sub(/".*$/, ""); print; exit
+            }
+          ' Cargo.toml)
+          if [ -z "$cargo_version" ]; then
+            echo "::error::Could not read version from the [package] table in Cargo.toml."
+            exit 1
           fi
+          if [ "$cargo_version" != "$VERSION" ]; then
+            echo "::error::Cargo.toml version ($cargo_version) does not match release version ($VERSION). Bump Cargo.toml before releasing."
+            exit 1
+          fi
+          echo "Cargo.toml version matches: $cargo_version"
 
       - name: Check tag does not already exist
         run: |
