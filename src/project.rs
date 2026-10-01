@@ -5,7 +5,7 @@
 //! project-file extensions such as `.csproj` and `.fsproj`.
 
 use std::borrow::Cow;
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
@@ -33,56 +33,50 @@ const PROJECT_MARKERS: &[&str] = &[
 
 const PROJECT_MARKER_EXTENSIONS: &[&str] = &["csproj", "fsproj"];
 
-/// Maximum number of parent directories searched during project detection.
+/// Maximum number of directories tested during one upward project walk.
 ///
-/// This cap is a safety net for unusual paths and very deep directory trees.
-/// The value is intentionally high enough for common monorepos while bounding
-/// worst-case filesystem work.
+/// The starting directory counts as the first. This cap is a safety net for
+/// unusual paths and very deep directory trees. The value is intentionally high
+/// enough for common monorepos while bounding worst-case filesystem work.
 pub const MAX_WALK_DEPTH: usize = 64;
 
-/// Resolve a project root from process-like path inputs.
+/// Resolve a project root from process-like path inputs without caching.
 ///
 /// The fallback order is:
 ///
-/// 1. Walk upward from [`ProjectInput::cwd`].
-/// 2. Walk upward from the parent directory of [`ProjectInput::exe`].
-/// 3. Walk upward from the parent directory of each absolute path in
-///    [`ProjectInput::cmd`].
+/// 1. Walk upward from the working directory set by [`ProjectInput::cwd`].
+/// 2. Walk upward from the parent directory of the executable set by
+///    [`ProjectInput::exe`].
+/// 3. Walk upward from the parent directory of each absolute path in the
+///    arguments set by [`ProjectInput::cmd`].
 ///
 /// The first marker hit wins. Relative command-line paths are ignored because
-/// they are ambiguous without a reliable process working directory.
+/// they are ambiguous without a reliable process working directory. `home` is
+/// the same optional ceiling as in [`find_project_root`].
+///
+/// Use [`StackDetector::detect_project_root`](crate::StackDetector::detect_project_root)
+/// for repeated lookups; it applies the same order with caching and its own
+/// configured home ceiling.
 ///
 /// # Examples
 ///
 /// ```
-/// use std::ffi::OsString;
 /// use what_stack::{ProjectInput, resolve_project_root};
 ///
-/// let cmd: Vec<OsString> = Vec::new();
-/// let input = ProjectInput {
-///     cwd: None,
-///     exe: None,
-///     cmd: &cmd,
-///     home: None,
-/// };
-///
-/// assert_eq!(resolve_project_root(input), None);
+/// assert_eq!(resolve_project_root(ProjectInput::new(), None), None);
 /// ```
 #[must_use]
-pub fn resolve_project_root(input: ProjectInput<'_>) -> Option<PathBuf> {
-    if let Some(cwd) = input.cwd
-        && let Some(root) = find_project_root(cwd, input.home)
-    {
-        return Some(root);
-    }
+pub fn resolve_project_root(input: ProjectInput<'_>, home: Option<&Path>) -> Option<PathBuf> {
+    project_root_candidates(input).find_map(|start| find_project_root(start, home))
+}
 
-    if let Some(exe_parent) = input.exe.and_then(Path::parent)
-        && let Some(root) = find_project_root(exe_parent, input.home)
-    {
-        return Some(root);
-    }
-
-    absolute_cmd_parents(input.cmd).find_map(|parent| find_project_root(parent, input.home))
+/// Starting directories for a project walk, in fallback order.
+pub fn project_root_candidates(input: ProjectInput<'_>) -> impl Iterator<Item = &Path> + '_ {
+    input
+        .cwd
+        .into_iter()
+        .chain(input.exe.and_then(Path::parent))
+        .chain(absolute_cmd_parents(input.cmd))
 }
 
 /// Walk upward from `start` looking for project marker files.
@@ -90,6 +84,8 @@ pub fn resolve_project_root(input: ProjectInput<'_>) -> Option<PathBuf> {
 /// `home` is an optional ceiling. When the walk reaches `home`, it stops before
 /// testing that directory for markers. This avoids accidental matches from
 /// marker files stored directly in a user's home directory.
+///
+/// At most [`MAX_WALK_DEPTH`] directories are tested, starting with `start`.
 ///
 /// # Examples
 ///
@@ -157,7 +153,7 @@ pub fn walk_ancestors<'a>(
     })
 }
 
-pub fn absolute_cmd_parents(cmd: &[std::ffi::OsString]) -> impl Iterator<Item = &Path> + '_ {
+fn absolute_cmd_parents(cmd: &[OsString]) -> impl Iterator<Item = &Path> + '_ {
     cmd.iter().filter_map(|arg| {
         let path = Path::new(arg.as_os_str());
         path.is_absolute().then(|| path.parent()).flatten()
@@ -190,8 +186,9 @@ pub fn has_marker(dir: &Path) -> bool {
 /// back to `SUDO_HOME` and then `HOME` when passwd lookup is unavailable. On
 /// Windows, it reads `USERPROFILE`.
 ///
-/// Callers that perform many project-root lookups should call this once and
-/// pass the result into [`find_project_root`] or [`ProjectInput::home`].
+/// [`StackDetector::new`](crate::StackDetector::new) calls this once to set its
+/// home ceiling. Callers of [`find_project_root`] or [`resolve_project_root`]
+/// should call it once and reuse the result.
 #[must_use]
 pub fn home_dir() -> Option<PathBuf> {
     #[cfg(unix)]

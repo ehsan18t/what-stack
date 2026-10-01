@@ -27,22 +27,55 @@ what-stack = "0.1"
 
 ```rust
 use std::path::Path;
-use what_stack::{StackDetector, StackInput, detect_from_image, detect_from_process};
+use what_stack::{
+    ProjectInput, StackDetector, StackInput, StackKind, detect_from_image, detect_from_process,
+};
 
-assert_eq!(detect_from_image("postgres:16").as_deref(), Some("PostgreSQL"));
-assert_eq!(detect_from_process("NGINX.EXE").as_deref(), Some("Nginx"));
+// One-off detection from strings. Every label carries a kind.
+let postgres = detect_from_image("postgres:16").expect("known image");
+assert_eq!(postgres, "PostgreSQL");
+assert_eq!(postgres.kind(), StackKind::Database);
+assert_eq!(detect_from_process("NGINX.EXE").expect("known process"), "Nginx");
 
-let mut detector = StackDetector::new(None);
-let label = detector.detect_stack(StackInput {
-    image: None,
-    project_root: Some(Path::new(".")),
-    process_name: "node",
-    exe_name: None,
-    exe_path: None,
-});
+// Cached detection for a scan of many processes. The home ceiling defaults
+// to `what_stack::home_dir()`; use `StackDetector::with_home` to override it.
+let mut detector = StackDetector::new();
 
-println!("{label:?}");
+let root = detector.detect_project_root(ProjectInput::new().cwd(Path::new(".")));
+let label = detector.detect_stack(
+    StackInput::new("node")
+        .exe_name("node.exe")
+        .project_root(root.as_deref()),
+);
+
+if let Some(label) = label {
+    println!("{label} ({:?})", label.kind());
+}
+
+// Drop cached filesystem results before the next scan.
+detector.clear();
 ```
+
+## API
+
+| Item | Purpose |
+| ---- | ------- |
+| `StackLabel` | Label text plus `StackKind`. `as_str()`, `kind()`, `Display`, `AsRef<str>`, `== "text"`, `into_cow()`. |
+| `StackKind` | `Runtime`, `Framework`, `Tool`, `Database`, `Service` (non-exhaustive). |
+| `StackDetector` | Cached detection. `new()` / `Default` (home ceiling from `home_dir()`), `with_home(Option<PathBuf>)`, `detect_project_root`, `detect_stack`, `clear`, `home`. |
+| `StackInput` | `StackInput::new(process_name)` with `.image()`, `.project_root()`, `.exe_name()`, `.exe_path()`. |
+| `ProjectInput` | `ProjectInput::new()` with `.cwd()`, `.exe()`, `.cmd()`. |
+| `detect_from_image` | Container or artifact image name. |
+| `detect_from_process` | Process executable name. |
+| `detect_from_process_names` | Process name with an executable-name fallback. |
+| `detect_from_config` | Config files in one project-root directory. |
+| `find_project_root` | Upward marker walk from one directory, with an optional home ceiling. |
+| `resolve_project_root` | Uncached cwd, executable, and argument fallback walk. |
+| `project_name` | Display name from a project-root path. |
+| `home_dir` | Current user's home directory (sudo-aware on Unix). |
+| `MAX_WALK_DEPTH` | Maximum directories tested per upward walk. |
+
+Setters accept either a value or an `Option`, so `.exe_path(path)` and `.exe_path(maybe_path)` both work.
 
 ## Detection Sources
 

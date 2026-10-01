@@ -1,14 +1,26 @@
 #![allow(missing_docs, reason = "integration tests document behavior via names")]
 
+use std::borrow::Cow;
 use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 use what_stack::{
-    ProjectInput, StackDetector, StackInput, detect_from_config, detect_from_image,
-    detect_from_process, find_project_root, project_name, resolve_project_root,
+    ProjectInput, StackDetector, StackInput, StackKind, StackLabel, detect_from_config,
+    detect_from_image, detect_from_process, detect_from_process_names, find_project_root,
+    project_name, resolve_project_root,
 };
 
-fn write_file(root: &std::path::Path, relative: &str, contents: &str) {
+/// Label text for assertions. Built-in labels are static, so this also checks
+/// that detection did not allocate.
+fn text(label: Option<StackLabel>) -> Option<&'static str> {
+    match label?.into_cow() {
+        Cow::Borrowed(text) => Some(text),
+        Cow::Owned(text) => panic!("built-in label {text:?} should be static"),
+    }
+}
+
+fn write_file(root: &Path, relative: &str, contents: &str) {
     let path = root.join(relative);
     std::fs::create_dir_all(path.parent().expect("test path has parent"))
         .expect("create parent directory");
@@ -17,20 +29,17 @@ fn write_file(root: &std::path::Path, relative: &str, contents: &str) {
 
 #[test]
 fn image_detection_keeps_known_labels_and_false_positive_guards() {
+    assert_eq!(text(detect_from_image("postgres:16")), Some("PostgreSQL"));
     assert_eq!(
-        detect_from_image("postgres:16").as_deref(),
-        Some("PostgreSQL")
-    );
-    assert_eq!(
-        detect_from_image("ghcr.io/org/nginx:latest").as_deref(),
+        text(detect_from_image("ghcr.io/org/nginx:latest")),
         Some("Nginx")
     );
     assert_eq!(
-        detect_from_image("mcr.microsoft.com/dotnet/aspnet:8.0").as_deref(),
+        text(detect_from_image("mcr.microsoft.com/dotnet/aspnet:8.0")),
         Some(".NET")
     );
     assert_eq!(
-        detect_from_image("redis/redis-stack:latest").as_deref(),
+        text(detect_from_image("redis/redis-stack:latest")),
         Some("Redis")
     );
     assert_eq!(detect_from_image("prom/node-exporter:latest"), None);
@@ -42,16 +51,13 @@ fn image_detection_keeps_known_labels_and_false_positive_guards() {
 
 #[test]
 fn image_detection_is_case_insensitive_and_ignores_tags_and_digests() {
+    assert_eq!(text(detect_from_image("POSTGRES:16")), Some("PostgreSQL"));
     assert_eq!(
-        detect_from_image("POSTGRES:16").as_deref(),
-        Some("PostgreSQL")
-    );
-    assert_eq!(
-        detect_from_image("ghcr.io/org/NGINX@sha256:abcd").as_deref(),
+        text(detect_from_image("ghcr.io/org/NGINX@sha256:abcd")),
         Some("Nginx")
     );
     assert_eq!(
-        detect_from_image("mcr.microsoft.com/DOTNET/aspnet:8.0").as_deref(),
+        text(detect_from_image("mcr.microsoft.com/DOTNET/aspnet:8.0")),
         Some(".NET")
     );
 }
@@ -76,7 +82,7 @@ fn image_detection_covers_existing_service_and_runtime_labels() {
         ("rust:1.90", "Rust"),
     ] {
         assert_eq!(
-            detect_from_image(image).as_deref(),
+            text(detect_from_image(image)),
             Some(expected),
             "image {image} should detect {expected}"
         );
@@ -85,12 +91,9 @@ fn image_detection_covers_existing_service_and_runtime_labels() {
 
 #[test]
 fn process_detection_is_exact_case_insensitive_and_strips_windows_exe_suffix() {
-    assert_eq!(
-        detect_from_process("postgres").as_deref(),
-        Some("PostgreSQL")
-    );
-    assert_eq!(detect_from_process("NGINX.EXE").as_deref(), Some("Nginx"));
-    assert_eq!(detect_from_process("Node").as_deref(), Some("Node.js"));
+    assert_eq!(text(detect_from_process("postgres")), Some("PostgreSQL"));
+    assert_eq!(text(detect_from_process("NGINX.EXE")), Some("Nginx"));
+    assert_eq!(text(detect_from_process("Node")), Some("Node.js"));
     assert_eq!(detect_from_process("com.docker.backend"), None);
     assert_eq!(detect_from_process("node-exporter"), None);
 }
@@ -100,7 +103,7 @@ fn config_detection_preserves_framework_priority_and_python_specifics() {
     let next = TempDir::new().expect("temp dir");
     write_file(next.path(), "next.config.mjs", "");
     write_file(next.path(), "package.json", "{}");
-    assert_eq!(detect_from_config(next.path()).as_deref(), Some("Next.js"));
+    assert_eq!(text(detect_from_config(next.path())), Some("Next.js"));
 
     let fastapi = TempDir::new().expect("temp dir");
     write_file(
@@ -108,10 +111,7 @@ fn config_detection_preserves_framework_priority_and_python_specifics() {
         "app.py",
         "from fastapi import FastAPI\napp = FastAPI()\n",
     );
-    assert_eq!(
-        detect_from_config(fastapi.path()).as_deref(),
-        Some("FastAPI")
-    );
+    assert_eq!(text(detect_from_config(fastapi.path())), Some("FastAPI"));
 
     let django = TempDir::new().expect("temp dir");
     write_file(
@@ -119,20 +119,17 @@ fn config_detection_preserves_framework_priority_and_python_specifics() {
         "wsgi.py",
         "from django.core.wsgi import get_wsgi_application\napplication = get_wsgi_application()\n",
     );
-    assert_eq!(detect_from_config(django.path()).as_deref(), Some("Django"));
+    assert_eq!(text(detect_from_config(django.path())), Some("Django"));
 
     let rack = TempDir::new().expect("temp dir");
     write_file(rack.path(), "Gemfile", "");
     write_file(rack.path(), "config.ru", "");
-    assert_eq!(
-        detect_from_config(rack.path()).as_deref(),
-        Some("Ruby (Rack)")
-    );
+    assert_eq!(text(detect_from_config(rack.path())), Some("Ruby (Rack)"));
 
     let dotnet = TempDir::new().expect("temp dir");
     write_file(dotnet.path(), "service/MyApp.csproj", "");
     assert_eq!(
-        detect_from_config(dotnet.path().join("service").as_path()).as_deref(),
+        text(detect_from_config(dotnet.path().join("service").as_path())),
         Some(".NET")
     );
 }
@@ -155,7 +152,7 @@ fn config_detection_covers_existing_project_markers_and_no_match_cases() {
         let dir = TempDir::new().expect("temp dir");
         write_file(dir.path(), marker, "");
         assert_eq!(
-            detect_from_config(dir.path()).as_deref(),
+            text(detect_from_config(dir.path())),
             Some(expected),
             "marker {marker} should detect {expected}"
         );
@@ -177,7 +174,7 @@ fn config_prefix_detection_accepts_only_known_source_suffixes() {
         let dir = TempDir::new().expect("temp dir");
         write_file(dir.path(), &format!("next.config{suffix}"), "");
         assert_eq!(
-            detect_from_config(dir.path()).as_deref(),
+            text(detect_from_config(dir.path())),
             Some("Next.js"),
             "next.config{suffix} should be accepted"
         );
@@ -192,14 +189,11 @@ fn config_prefix_detection_accepts_only_known_source_suffixes() {
 fn config_detection_distinguishes_dotnet_csharp_and_fsharp_projects() {
     let csharp = TempDir::new().expect("temp dir");
     write_file(csharp.path(), "MyApp.csproj", "");
-    assert_eq!(detect_from_config(csharp.path()).as_deref(), Some(".NET"));
+    assert_eq!(text(detect_from_config(csharp.path())), Some(".NET"));
 
     let fsharp = TempDir::new().expect("temp dir");
     write_file(fsharp.path(), "MyApp.fsproj", "");
-    assert_eq!(
-        detect_from_config(fsharp.path()).as_deref(),
-        Some(".NET (F#)")
-    );
+    assert_eq!(text(detect_from_config(fsharp.path())), Some(".NET (F#)"));
 }
 
 #[test]
@@ -211,14 +205,14 @@ fn python_config_detection_uses_dependencies_and_generic_fallback() {
         "[project]\ndependencies = [\"flask>=3.0\"]\n",
     );
     assert_eq!(
-        detect_from_config(flask_dependency.path()).as_deref(),
+        text(detect_from_config(flask_dependency.path())),
         Some("Flask")
     );
 
     let generic_python = TempDir::new().expect("temp dir");
     write_file(generic_python.path(), "app.py", "print('hello')\n");
     assert_eq!(
-        detect_from_config(generic_python.path()).as_deref(),
+        text(detect_from_config(generic_python.path())),
         Some("Python")
     );
 }
@@ -231,10 +225,7 @@ fn python_dependency_detection_uses_package_boundaries() {
         "requirements.txt",
         "flask-login==0.6.3\nstarlette-exporter==0.23.0\n",
     );
-    assert_eq!(
-        detect_from_config(plugin_only.path()).as_deref(),
-        Some("Python")
-    );
+    assert_eq!(text(detect_from_config(plugin_only.path())), Some("Python"));
 
     let direct = TempDir::new().expect("temp dir");
     write_file(
@@ -242,10 +233,7 @@ fn python_dependency_detection_uses_package_boundaries() {
         "requirements.txt",
         "fastapi[standard]>=0.115\n",
     );
-    assert_eq!(
-        detect_from_config(direct.path()).as_deref(),
-        Some("FastAPI")
-    );
+    assert_eq!(text(detect_from_config(direct.path())), Some("FastAPI"));
 }
 
 #[test]
@@ -302,16 +290,23 @@ fn project_input_uses_cwd_then_exe_then_absolute_command_arguments() {
     write_file(cmd_path.parent().expect("cmd parent"), "launcher.py", "");
 
     let cmd = vec![OsString::from(&cmd_path)];
-    let input = ProjectInput {
-        cwd: None,
-        exe: Some(exe_path.as_path()),
-        cmd: &cmd,
-        home: None,
-    };
+    let input = ProjectInput::new().exe(exe_path.as_path()).cmd(&cmd);
 
     assert_eq!(
-        resolve_project_root(input).as_deref(),
+        resolve_project_root(input, None).as_deref(),
         Some(exe_root.as_path())
+    );
+
+    let cmd_only = ProjectInput::new().cmd(&cmd);
+    assert_eq!(
+        resolve_project_root(cmd_only, None).as_deref(),
+        Some(cmd_root.as_path())
+    );
+    assert_eq!(
+        StackDetector::new()
+            .detect_project_root(cmd_only)
+            .as_deref(),
+        Some(cmd_root.as_path())
     );
 }
 
@@ -333,16 +328,104 @@ fn project_input_uses_cwd_before_exe_and_absolute_command_arguments() {
     write_file(cmd_path.parent().expect("cmd parent"), "launcher.py", "");
 
     let cmd = vec![OsString::from(&cmd_path)];
-    let input = ProjectInput {
-        cwd: Some(cwd.as_path()),
-        exe: Some(exe_path.as_path()),
-        cmd: &cmd,
-        home: None,
-    };
+    let input = ProjectInput::new()
+        .cwd(cwd.as_path())
+        .exe(exe_path.as_path())
+        .cmd(&cmd);
 
     assert_eq!(
-        resolve_project_root(input).as_deref(),
+        resolve_project_root(input, None).as_deref(),
         Some(web_root.as_path())
+    );
+    assert_eq!(
+        StackDetector::new().detect_project_root(input).as_deref(),
+        Some(web_root.as_path())
+    );
+}
+
+#[test]
+fn detector_home_ceiling_comes_only_from_the_detector() {
+    let fake_home = TempDir::new().expect("temp dir");
+    write_file(fake_home.path(), "package.json", "{}");
+    let unrelated = fake_home.path().join("unrelated");
+    std::fs::create_dir_all(&unrelated).expect("create unrelated dir");
+    let input = ProjectInput::new().cwd(unrelated.as_path());
+
+    let mut ceiling = StackDetector::with_home(Some(fake_home.path().to_path_buf()));
+    let mut no_ceiling = StackDetector::with_home(None);
+
+    // Query order must not matter: each detector owns one ceiling and one cache.
+    assert_eq!(
+        no_ceiling.detect_project_root(input).as_deref(),
+        Some(fake_home.path())
+    );
+    assert_eq!(ceiling.detect_project_root(input), None);
+    assert_eq!(
+        no_ceiling.detect_project_root(input).as_deref(),
+        Some(fake_home.path())
+    );
+    assert_eq!(ceiling.detect_project_root(input), None);
+    assert_eq!(resolve_project_root(input, Some(fake_home.path())), None);
+}
+
+#[test]
+fn detector_new_and_default_use_home_dir() {
+    let expected: Option<PathBuf> = what_stack::home_dir();
+    assert_eq!(StackDetector::new().home(), expected.as_deref());
+    assert_eq!(StackDetector::default().home(), expected.as_deref());
+    assert_eq!(StackDetector::with_home(None).home(), None);
+}
+
+#[test]
+fn process_names_fall_back_to_executable_name() {
+    assert_eq!(
+        text(detect_from_process_names(
+            "redis-serv",
+            Some("redis-server")
+        )),
+        Some("Redis")
+    );
+    assert_eq!(
+        text(detect_from_process_names("node", Some("redis-server"))),
+        Some("Node.js"),
+        "the process-table name wins when it is known"
+    );
+    assert_eq!(text(detect_from_process_names("helper", None)), None);
+    assert_eq!(
+        text(detect_from_process_names("", Some("helper.exe"))),
+        None
+    );
+}
+
+#[test]
+fn labels_carry_kinds_from_their_rules() {
+    let kind = |label: Option<StackLabel>| label.map(|label| label.kind());
+
+    assert_eq!(kind(detect_from_process("node")), Some(StackKind::Runtime));
+    assert_eq!(kind(detect_from_process("vite")), Some(StackKind::Tool));
+    assert_eq!(
+        kind(detect_from_process("rails")),
+        Some(StackKind::Framework)
+    );
+    assert_eq!(
+        kind(detect_from_process("postgres")),
+        Some(StackKind::Database)
+    );
+    assert_eq!(kind(detect_from_process("nginx")), Some(StackKind::Service));
+    assert_eq!(
+        kind(detect_from_image("redis:7")),
+        Some(StackKind::Database)
+    );
+    assert_eq!(
+        kind(detect_from_image("traefik:v3")),
+        Some(StackKind::Service)
+    );
+
+    let next = TempDir::new().expect("temp dir");
+    write_file(next.path(), "next.config.mjs", "");
+    assert_eq!(
+        kind(detect_from_config(next.path())),
+        Some(StackKind::Framework)
     );
 }
 
@@ -351,36 +434,87 @@ fn stack_detector_preserves_priority_and_config_guard() {
     let project = TempDir::new().expect("temp dir");
     write_file(project.path(), "next.config.js", "");
 
-    let mut detector = StackDetector::new(None);
-    let image_wins = detector.detect_stack(StackInput {
-        image: Some("postgres:16"),
-        project_root: Some(project.path()),
-        process_name: "node",
-        exe_name: None,
-        exe_path: None,
-    });
-    assert_eq!(image_wins.as_deref(), Some("PostgreSQL"));
+    let mut detector = StackDetector::new();
+    let image_wins = detector.detect_stack(
+        StackInput::new("node")
+            .image("postgres:16")
+            .project_root(project.path()),
+    );
+    assert_eq!(text(image_wins), Some("PostgreSQL"));
 
-    let config_for_runtime = detector.detect_stack(StackInput {
-        image: None,
-        project_root: Some(project.path()),
-        process_name: "node",
-        exe_name: None,
-        exe_path: None,
-    });
-    assert_eq!(config_for_runtime.as_deref(), Some("Next.js"));
+    let config_for_runtime =
+        detector.detect_stack(StackInput::new("node").project_root(project.path()));
+    assert_eq!(text(config_for_runtime), Some("Next.js"));
 
     let external_shell = TempDir::new().expect("temp dir");
     let shell_path = external_shell.path().join("pwsh.exe");
     write_file(external_shell.path(), "pwsh.exe", "");
-    let guarded = detector.detect_stack(StackInput {
-        image: None,
-        project_root: Some(project.path()),
-        process_name: "pwsh.exe",
-        exe_name: Some("pwsh.exe"),
-        exe_path: Some(shell_path.as_path()),
-    });
+    let guarded = detector.detect_stack(
+        StackInput::new("pwsh.exe")
+            .exe_name("pwsh.exe")
+            .exe_path(shell_path.as_path())
+            .project_root(project.path()),
+    );
     assert_eq!(guarded, None);
+
+    let inside_exe = project.path().join("bin").join("my-app.exe");
+    write_file(project.path(), "bin/my-app.exe", "");
+    let unknown_inside_project = detector.detect_stack(
+        StackInput::new("my-app.exe")
+            .exe_path(inside_exe.as_path())
+            .project_root(project.path()),
+    );
+    assert_eq!(text(unknown_inside_project), Some("Next.js"));
+}
+
+#[test]
+fn service_and_database_labels_are_not_overridden_by_project_config() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(project.path(), "next.config.js", "");
+    write_file(project.path(), "package.json", "{}");
+
+    let mut detector = StackDetector::new();
+    for (process, expected) in [
+        ("redis-server", "Redis"),
+        ("postgres", "PostgreSQL"),
+        ("nginx", "Nginx"),
+        ("mongod", "MongoDB"),
+        ("rabbitmq-server", "RabbitMQ"),
+    ] {
+        let label = detector.detect_stack(StackInput::new(process).project_root(project.path()));
+        assert_eq!(
+            text(label),
+            Some(expected),
+            "{process} started in a Next.js folder"
+        );
+    }
+
+    let truncated = detector.detect_stack(
+        StackInput::new("redis-serv")
+            .exe_name("redis-server")
+            .project_root(project.path()),
+    );
+    assert_eq!(text(truncated), Some("Redis"));
+}
+
+#[test]
+fn framework_labels_are_final_and_tool_labels_accept_config() {
+    let rack = TempDir::new().expect("temp dir");
+    write_file(rack.path(), "Gemfile", "");
+    write_file(rack.path(), "config.ru", "");
+
+    let svelte = TempDir::new().expect("temp dir");
+    write_file(svelte.path(), "svelte.config.js", "");
+
+    let mut detector = StackDetector::new();
+    let rails = detector.detect_stack(StackInput::new("rails").project_root(rack.path()));
+    assert_eq!(text(rails), Some("Rails"));
+
+    let ruby = detector.detect_stack(StackInput::new("ruby").project_root(rack.path()));
+    assert_eq!(text(ruby), Some("Ruby (Rack)"));
+
+    let vite = detector.detect_stack(StackInput::new("vite").project_root(svelte.path()));
+    assert_eq!(text(vite), Some("SvelteKit"));
 }
 
 #[test]
@@ -388,42 +522,36 @@ fn stack_detector_caches_project_and_config_detection_results() {
     let project = TempDir::new().expect("temp dir");
     let nested = project.path().join("src");
     std::fs::create_dir_all(&nested).expect("create nested dir");
-    write_file(project.path(), "Cargo.toml", "");
+    write_file(project.path(), "package.json", "{}");
+    write_file(project.path(), "next.config.js", "");
 
-    let mut detector = StackDetector::new(None);
-    let root = detector.detect_project_root(ProjectInput {
-        cwd: Some(nested.as_path()),
-        exe: None,
-        cmd: &[],
-        home: None,
-    });
-    assert_eq!(root.as_deref(), Some(project.path()));
+    let mut detector = StackDetector::new();
+    let input = ProjectInput::new().cwd(nested.as_path());
+    assert_eq!(
+        detector.detect_project_root(input).as_deref(),
+        Some(project.path())
+    );
 
-    let stack = detector.detect_stack(StackInput {
-        image: None,
-        project_root: Some(project.path()),
-        process_name: "cargo",
-        exe_name: None,
-        exe_path: None,
-    });
-    assert_eq!(stack.as_deref(), Some("Rust"));
+    // `node` is a runtime, so only the config file can make it Next.js.
+    let stack_input = StackInput::new("node").project_root(project.path());
+    assert_eq!(text(detector.detect_stack(stack_input)), Some("Next.js"));
 
-    std::fs::remove_file(project.path().join("Cargo.toml")).expect("remove marker");
+    std::fs::remove_file(project.path().join("next.config.js")).expect("remove config");
+    std::fs::remove_file(project.path().join("package.json")).expect("remove marker");
 
-    let cached_root = detector.detect_project_root(ProjectInput {
-        cwd: Some(nested.as_path()),
-        exe: None,
-        cmd: &[],
-        home: None,
-    });
-    assert_eq!(cached_root.as_deref(), Some(project.path()));
+    assert_eq!(
+        detector.detect_project_root(input).as_deref(),
+        Some(project.path()),
+        "project root should come from the cache"
+    );
+    assert_eq!(
+        text(detector.detect_stack(stack_input)),
+        Some("Next.js"),
+        "config label should come from the cache"
+    );
 
-    let cached_stack = detector.detect_stack(StackInput {
-        image: None,
-        project_root: Some(project.path()),
-        process_name: "cargo",
-        exe_name: None,
-        exe_path: None,
-    });
-    assert_eq!(cached_stack.as_deref(), Some("Rust"));
+    detector.clear();
+
+    assert_eq!(detector.detect_project_root(input), None);
+    assert_eq!(text(detector.detect_stack(stack_input)), Some("Node.js"));
 }

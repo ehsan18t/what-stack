@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::path::Path;
 
 use super::files::ProjectFiles;
@@ -24,33 +23,43 @@ const DJANGO_SOURCE_PATTERNS: &[&str] = &[
     "get_asgi_application",
 ];
 
-type PythonSourcePattern = (&'static str, &'static [&'static str], &'static str);
+/// Label for Python projects without a recognized framework.
+pub const PYTHON_LABEL: StackLabel = StackLabel::runtime("Python");
 
-const PYTHON_SOURCE_PATTERNS: &[PythonSourcePattern] = &[
+/// Label for Django projects.
+pub const DJANGO_LABEL: StackLabel = StackLabel::framework("Django");
+
+type PythonSourcePattern = (StackLabel, &'static [&'static str], &'static str);
+
+pub const PYTHON_SOURCE_PATTERNS: &[PythonSourcePattern] = &[
     (
-        "FastAPI",
+        StackLabel::framework("FastAPI"),
         &["from fastapi import", "import fastapi"],
         "fastapi(",
     ),
     (
-        "Starlette",
+        StackLabel::framework("Starlette"),
         &["from starlette.applications import", "import starlette"],
         "starlette(",
     ),
     (
-        "Litestar",
+        StackLabel::framework("Litestar"),
         &["from litestar import", "import litestar"],
         "litestar(",
     ),
-    ("Flask", &["from flask import", "import flask"], "flask("),
+    (
+        StackLabel::framework("Flask"),
+        &["from flask import", "import flask"],
+        "flask(",
+    ),
 ];
 
-const PYTHON_DEPENDENCY_PATTERNS: &[(&str, &str)] = &[
-    ("django", "Django"),
-    ("flask", "Flask"),
-    ("fastapi", "FastAPI"),
-    ("starlette", "Starlette"),
-    ("litestar", "Litestar"),
+pub const PYTHON_DEPENDENCY_PATTERNS: &[(&str, StackLabel)] = &[
+    ("django", DJANGO_LABEL),
+    ("flask", StackLabel::framework("Flask")),
+    ("fastapi", StackLabel::framework("FastAPI")),
+    ("starlette", StackLabel::framework("Starlette")),
+    ("litestar", StackLabel::framework("Litestar")),
 ];
 
 pub(super) fn detect_python_project(
@@ -62,12 +71,12 @@ pub(super) fn detect_python_project(
     }
 
     if files.contains_exact("manage.py") {
-        return Some(Cow::Borrowed("Django"));
+        return Some(DJANGO_LABEL);
     }
 
     detect_python_framework_from_entry_files(project_root, files)
         .or_else(|| detect_python_framework_from_dependencies(project_root, files))
-        .or(Some(Cow::Borrowed("Python")))
+        .or(Some(PYTHON_LABEL))
 }
 
 fn is_python_project(files: &ProjectFiles) -> bool {
@@ -86,7 +95,7 @@ fn detect_python_framework_from_entry_files(
         };
 
         if let Some(label) = detect_python_framework_from_source(&source) {
-            return Some(Cow::Borrowed(label));
+            return Some(label);
         }
     }
 
@@ -104,33 +113,33 @@ fn detect_python_framework_from_dependencies(
 
         let normalized = contents.to_ascii_lowercase();
         if let Some(label) = detect_python_framework_from_dependency_text(&normalized) {
-            return Some(Cow::Borrowed(label));
+            return Some(label);
         }
     }
 
     None
 }
 
-fn detect_python_framework_from_dependency_text(normalized: &str) -> Option<&'static str> {
+fn detect_python_framework_from_dependency_text(normalized: &str) -> Option<StackLabel> {
     PYTHON_DEPENDENCY_PATTERNS
         .iter()
-        .find_map(|(package, label)| {
-            contains_dependency_token(normalized, package).then_some(*label)
-        })
+        .find(|(package, _)| contains_dependency_token(normalized, package))
+        .map(|(_, label)| label.clone())
 }
 
-fn detect_python_framework_from_source(source: &str) -> Option<&'static str> {
+fn detect_python_framework_from_source(source: &str) -> Option<StackLabel> {
     let normalized = source.to_ascii_lowercase();
 
     if contains_any(&normalized, DJANGO_SOURCE_PATTERNS) {
-        return Some("Django");
+        return Some(DJANGO_LABEL);
     }
 
     PYTHON_SOURCE_PATTERNS
         .iter()
-        .find_map(|(label, imports, constructor)| {
-            source_mentions_framework(&normalized, imports, constructor).then_some(*label)
+        .find(|(_, imports, constructor)| {
+            source_mentions_framework(&normalized, imports, constructor)
         })
+        .map(|(label, _, _)| label.clone())
 }
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {

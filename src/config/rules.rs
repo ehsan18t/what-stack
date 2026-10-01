@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::path::Path;
 
 use super::files::ProjectFiles;
@@ -6,37 +5,107 @@ use super::python;
 use crate::StackLabel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ConfigMatchKind {
+pub enum ConfigMatchKind {
     Exact,
     Prefix,
 }
 
-const CONFIG_PATTERNS: &[(&str, &str, ConfigMatchKind)] = &[
-    ("next.config", "Next.js", ConfigMatchKind::Prefix),
-    ("nuxt.config", "Nuxt", ConfigMatchKind::Prefix),
-    ("angular.json", "Angular", ConfigMatchKind::Exact),
-    ("svelte.config", "SvelteKit", ConfigMatchKind::Prefix),
-    ("astro.config", "Astro", ConfigMatchKind::Prefix),
-    ("vite.config", "Vite", ConfigMatchKind::Prefix),
-    ("remix.config", "Remix", ConfigMatchKind::Prefix),
-    ("gatsby-config", "Gatsby", ConfigMatchKind::Prefix),
-    ("vue.config", "Vue CLI", ConfigMatchKind::Prefix),
-    ("webpack.config", "Webpack", ConfigMatchKind::Prefix),
-    ("Cargo.toml", "Rust", ConfigMatchKind::Exact),
-    ("go.mod", "Go", ConfigMatchKind::Exact),
-    ("pom.xml", "Java (Maven)", ConfigMatchKind::Exact),
+pub const CONFIG_PATTERNS: &[(&str, StackLabel, ConfigMatchKind)] = &[
     (
-        "build.gradle.kts",
-        "Kotlin (Gradle)",
+        "next.config",
+        StackLabel::framework("Next.js"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "nuxt.config",
+        StackLabel::framework("Nuxt"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "angular.json",
+        StackLabel::framework("Angular"),
         ConfigMatchKind::Exact,
     ),
-    ("build.gradle", "Java (Gradle)", ConfigMatchKind::Exact),
-    ("composer.json", "PHP", ConfigMatchKind::Exact),
-    ("mix.exs", "Elixir", ConfigMatchKind::Exact),
-    ("deno.json", "Deno", ConfigMatchKind::Exact),
+    (
+        "svelte.config",
+        StackLabel::framework("SvelteKit"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "astro.config",
+        StackLabel::framework("Astro"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "vite.config",
+        StackLabel::tool("Vite"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "remix.config",
+        StackLabel::framework("Remix"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "gatsby-config",
+        StackLabel::framework("Gatsby"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "vue.config",
+        StackLabel::tool("Vue CLI"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "webpack.config",
+        StackLabel::tool("Webpack"),
+        ConfigMatchKind::Prefix,
+    ),
+    (
+        "Cargo.toml",
+        StackLabel::runtime("Rust"),
+        ConfigMatchKind::Exact,
+    ),
+    ("go.mod", StackLabel::runtime("Go"), ConfigMatchKind::Exact),
+    (
+        "pom.xml",
+        StackLabel::tool("Java (Maven)"),
+        ConfigMatchKind::Exact,
+    ),
+    (
+        "build.gradle.kts",
+        StackLabel::tool("Kotlin (Gradle)"),
+        ConfigMatchKind::Exact,
+    ),
+    (
+        "build.gradle",
+        StackLabel::tool("Java (Gradle)"),
+        ConfigMatchKind::Exact,
+    ),
+    (
+        "composer.json",
+        StackLabel::runtime("PHP"),
+        ConfigMatchKind::Exact,
+    ),
+    (
+        "mix.exs",
+        StackLabel::runtime("Elixir"),
+        ConfigMatchKind::Exact,
+    ),
+    (
+        "deno.json",
+        StackLabel::runtime("Deno"),
+        ConfigMatchKind::Exact,
+    ),
 ];
 
-const CONFIG_EXTENSIONS: &[(&str, &str)] = &[("csproj", ".NET"), ("fsproj", ".NET (F#)")];
+pub const CONFIG_EXTENSIONS: &[(&str, StackLabel)] = &[
+    ("csproj", StackLabel::runtime(".NET")),
+    ("fsproj", StackLabel::runtime(".NET (F#)")),
+];
+
+/// Label for Ruby projects with both `Gemfile` and `config.ru`.
+pub const RACK_LABEL: StackLabel = StackLabel::framework("Ruby (Rack)");
 
 const COMMON_CONFIG_SUFFIXES: &[&str] = &["", ".js", ".cjs", ".mjs", ".ts", ".cts", ".mts"];
 
@@ -80,7 +149,7 @@ fn detect_from_config_patterns(files: &ProjectFiles) -> Option<StackLabel> {
         };
 
         if matches {
-            return Some(Cow::Borrowed(label));
+            return Some(label.clone());
         }
     }
 
@@ -88,16 +157,14 @@ fn detect_from_config_patterns(files: &ProjectFiles) -> Option<StackLabel> {
 }
 
 fn detect_rack_project(files: &ProjectFiles) -> Option<StackLabel> {
-    (files.contains_exact("Gemfile") && files.contains_exact("config.ru"))
-        .then_some(Cow::Borrowed("Ruby (Rack)"))
+    (files.contains_exact("Gemfile") && files.contains_exact("config.ru")).then_some(RACK_LABEL)
 }
 
 fn detect_from_config_extensions(files: &ProjectFiles) -> Option<StackLabel> {
-    CONFIG_EXTENSIONS.iter().find_map(|(extension, label)| {
-        files
-            .contains_extension(extension)
-            .then_some(Cow::Borrowed(*label))
-    })
+    CONFIG_EXTENSIONS
+        .iter()
+        .find(|(extension, _)| files.contains_extension(extension))
+        .map(|(_, label)| label.clone())
 }
 
 pub(super) fn matches_config_name_prefix(name: &str, pattern: &str) -> bool {

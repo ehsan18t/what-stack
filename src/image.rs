@@ -3,44 +3,46 @@
 //! This module handles only image-string parsing and label matching. It does
 //! not talk to a container daemon or validate that an image exists.
 
-use std::borrow::Cow;
-
 use crate::StackLabel;
 
-const EXACT_IMAGE_RULES: &[(&str, &str)] = &[
-    ("mongo", "MongoDB"),
-    ("redis", "Redis"),
-    ("httpd", "Apache"),
-    ("node", "Node.js"),
-    ("python", "Python"),
-    ("python3", "Python"),
-    ("ruby", "Ruby"),
-    ("golang", "Go"),
-    ("go", "Go"),
-    ("rust", "Rust"),
+pub const EXACT_IMAGE_RULES: &[(&str, StackLabel)] = &[
+    ("mongo", StackLabel::database("MongoDB")),
+    ("redis", StackLabel::database("Redis")),
+    ("httpd", StackLabel::service("Apache")),
+    ("node", StackLabel::runtime("Node.js")),
+    ("python", StackLabel::runtime("Python")),
+    ("python3", StackLabel::runtime("Python")),
+    ("ruby", StackLabel::runtime("Ruby")),
+    ("golang", StackLabel::runtime("Go")),
+    ("go", StackLabel::runtime("Go")),
+    ("rust", StackLabel::runtime("Rust")),
 ];
 
-const PREFIX_IMAGE_RULES: &[(&str, &str)] = &[
-    ("postgres", "PostgreSQL"),
-    ("mysql", "MySQL"),
-    ("mariadb", "MariaDB"),
-    ("mongodb", "MongoDB"),
-    ("redis-stack", "Redis"),
-    ("valkey", "Valkey"),
-    ("memcached", "Memcached"),
-    ("nginx", "Nginx"),
-    ("apache", "Apache"),
-    ("rabbitmq", "RabbitMQ"),
-    ("localstack", "LocalStack"),
-    ("elasticsearch", "Elasticsearch"),
-    ("opensearch", "OpenSearch"),
-    ("clickhouse", "ClickHouse"),
-    ("caddy", "Caddy"),
-    ("traefik", "Traefik"),
-    ("openjdk", "Java"),
-    ("eclipse-temurin", "Java"),
-    ("dotnet", ".NET"),
+pub const PREFIX_IMAGE_RULES: &[(&str, StackLabel)] = &[
+    ("postgres", StackLabel::database("PostgreSQL")),
+    ("mysql", StackLabel::database("MySQL")),
+    ("mariadb", StackLabel::database("MariaDB")),
+    ("mongodb", StackLabel::database("MongoDB")),
+    ("redis-stack", StackLabel::database("Redis")),
+    ("valkey", StackLabel::database("Valkey")),
+    ("memcached", StackLabel::database("Memcached")),
+    ("nginx", StackLabel::service("Nginx")),
+    ("apache", StackLabel::service("Apache")),
+    ("rabbitmq", StackLabel::service("RabbitMQ")),
+    ("localstack", StackLabel::service("LocalStack")),
+    ("elasticsearch", StackLabel::database("Elasticsearch")),
+    ("opensearch", StackLabel::database("OpenSearch")),
+    ("clickhouse", StackLabel::database("ClickHouse")),
+    ("caddy", StackLabel::service("Caddy")),
+    ("traefik", StackLabel::service("Traefik")),
+    ("openjdk", StackLabel::runtime("Java")),
+    ("eclipse-temurin", StackLabel::runtime("Java")),
+    ("dotnet", StackLabel::runtime(".NET")),
 ];
+
+/// Label for images under a `dotnet` registry namespace, such as
+/// `mcr.microsoft.com/dotnet/aspnet`.
+pub const DOTNET_NAMESPACE_LABEL: StackLabel = StackLabel::runtime(".NET");
 
 /// Detect a stack label from a container or artifact image name.
 ///
@@ -53,10 +55,10 @@ const PREFIX_IMAGE_RULES: &[(&str, &str)] = &[
 /// ```
 /// use what_stack::detect_from_image;
 ///
-/// assert_eq!(detect_from_image("postgres:16").as_deref(), Some("PostgreSQL"));
+/// assert_eq!(detect_from_image("postgres:16").expect("known image"), "PostgreSQL");
 /// assert_eq!(
-///     detect_from_image("mcr.microsoft.com/dotnet/aspnet:8.0").as_deref(),
-///     Some(".NET"),
+///     detect_from_image("mcr.microsoft.com/dotnet/aspnet:8.0").expect("known image"),
+///     ".NET",
 /// );
 /// assert_eq!(detect_from_image("prom/node-exporter:latest"), None);
 /// ```
@@ -73,23 +75,23 @@ pub fn detect_from_image(image: &str) -> Option<StackLabel> {
         .next()
         .unwrap_or(last_segment);
 
-    let label = detect_exact_base(base)
+    detect_exact_base(base)
         .or_else(|| detect_prefixed_base(base))
-        .or_else(|| image_has_dotnet_namespace(image).then_some(".NET"))?;
-
-    Some(Cow::Borrowed(label))
+        .or_else(|| image_has_dotnet_namespace(image).then_some(DOTNET_NAMESPACE_LABEL))
 }
 
-fn detect_exact_base(base: &str) -> Option<&'static str> {
+fn detect_exact_base(base: &str) -> Option<StackLabel> {
     EXACT_IMAGE_RULES
         .iter()
-        .find_map(|(name, label)| base.eq_ignore_ascii_case(name).then_some(*label))
+        .find(|(name, _)| base.eq_ignore_ascii_case(name))
+        .map(|(_, label)| label.clone())
 }
 
-fn detect_prefixed_base(base: &str) -> Option<&'static str> {
+fn detect_prefixed_base(base: &str) -> Option<StackLabel> {
     PREFIX_IMAGE_RULES
         .iter()
-        .find_map(|(prefix, label)| starts_with_ascii_case(base, prefix).then_some(*label))
+        .find(|(prefix, _)| starts_with_ascii_case(base, prefix))
+        .map(|(_, label)| label.clone())
 }
 
 fn image_has_dotnet_namespace(image: &str) -> bool {
