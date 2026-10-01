@@ -1,8 +1,6 @@
 # what-stack
 
-Universal Rust library for detecting project roots and technology stacks from
-generic inputs such as image names, project directories, process names,
-executable paths, and command-line arguments.
+Universal Rust library for detecting project roots and technology stacks from generic inputs such as image names, project directories, process names, executable paths, and command-line arguments.
 
 [![CI](https://github.com/ehsan18t/what-stack/actions/workflows/ci.yml/badge.svg)](https://github.com/ehsan18t/what-stack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -11,8 +9,7 @@ executable paths, and command-line arguments.
 ## Goals
 
 - Standalone library API with no PortLens, socket, Docker-client, or CLI types.
-- Zero default runtime dependencies on Windows; Unix uses `libc` only for robust
-  home-directory lookup.
+- Zero default runtime dependencies on Windows; Unix uses `libc` only for robust home-directory lookup.
 - No async runtime, regex engine, logging facade, serde model, or subprocesses.
 - Best-effort detection that prefers explicit evidence over port-number guesses.
 
@@ -81,25 +78,22 @@ Setters accept either a value or an `Option`, so `.exe_path(path)` and `.exe_pat
 
 `what-stack` detects stacks from:
 
-- Image names, for example `postgres:16`, `redis/redis-stack`, or
-  `mcr.microsoft.com/dotnet/aspnet`.
-- Project config files, for example `next.config.mjs`, `Cargo.toml`, `go.mod`,
-  `pyproject.toml`, `pom.xml`, `build.gradle`, `Gemfile`, and `.csproj`.
-- Python entry and dependency files, including Django, Flask, FastAPI,
-  Starlette, Litestar, and generic Python fallback.
-- Process names, including common runtimes, databases, web servers, search
-  services, message brokers, and dev tools.
-- Project markers found by walking upward from cwd, executable parent, or
-  absolute command-line argument paths.
+- Image names, for example `postgres:16`, `redis/redis-stack`, `oven/bun`, `php:8.3-apache`, or `mcr.microsoft.com/dotnet/aspnet`. Most language runtime images (`node`, `python`, `php`) match only their exact name. Database and service images, plus the `openjdk`, `eclipse-temurin`, and `dotnet` runtime images, match a name prefix followed by the end of the name or a separator (`redis-sentinel` is Redis, `redisinsight` is not), and companion images such as `postgres-exporter`, `opensearch-dashboards`, or `mysql-workbench` are not labeled as the service.
+- Project config files, for example `next.config.mjs`, `vite.config.ts`, `Cargo.toml`, `go.mod`, `pom.xml`, `build.gradle`, `composer.json` (with `artisan` for Laravel), `deno.json`, and `.csproj`. Ruby projects need `Gemfile` plus `config.ru` (Rack), and also `bin/rails` for Rails.
+- Python entry and dependency files, including Django, Flask, FastAPI, Starlette, Litestar, and generic Python fallback. Files are read up to 64 KiB, only when they are regular files; UTF-16 files with a byte-order mark and invalid UTF-8 are tolerated.
+- Process names, including common runtimes, databases, web servers, search services, message brokers, and dev tools. Runtime version suffixes (`python3.12`, `php-fpm8.2`) and titles truncated by Linux (`next-server (v1`, `gunicorn: maste`) are recognized.
+- Project markers found by walking upward from cwd, executable parent, or absolute command-line argument paths: `package.json`, `bun.lock`, `bun.lockb`, `deno.json`, `deno.jsonc`, `Cargo.toml`, `go.mod`, `go.work`, `pyproject.toml`, `requirements.txt`, `setup.py`, `Pipfile`, `pom.xml`, `build.gradle`, `build.gradle.kts`, `composer.json`, `Gemfile`, `mix.exs`, `.csproj`, and `.fsproj`.
 
-High-level stack detection uses this priority:
+`StackDetector::detect_stack` uses this priority:
 
 1. Image name.
-2. Project config, only when the process is recognized or the executable is
-   inside the project.
-3. Process name.
+2. Process name, when its label is final: a framework (`Rails`), database (`PostgreSQL`), or service (`Nginx`).
+3. Project config, when the process label is a runtime or tool (`Node.js`, `Vite`), or when the process is unknown but its executable is inside the project.
+4. Process name (runtime or tool).
 
-There is no well-known-port fallback.
+So `node` in a Next.js folder is `Next.js`, while `redis-server` started from the same folder stays `Redis`. Config labels follow the process's language ecosystem: `php` in a Laravel project with `vite.config.js` is `Laravel` while `node` there is `Vite`, `node` next to `deno.json` stays `Node.js`, and `gunicorn` in a Python project with no recognized framework stays `Gunicorn`. There is no well-known-port fallback.
+
+Config detection also follows the process ecosystem: a known runtime or tool accepts only config labels from its own ecosystem. In a Laravel project with `vite.config.js`, `php` is `Laravel` while `node` is `Vite`; `python` in a Next.js folder stays `Python`. An unknown process, and `detect_from_config`, use every rule in a fixed order.
 
 ## Development
 
@@ -133,8 +127,7 @@ bash scripts/install-hooks.sh
 
 ## Benchmarks
 
-This crate uses [Gungraun](https://crates.io/crates/gungraun) for deterministic
-instruction-count benchmarks.
+This crate uses [Gungraun](https://crates.io/crates/gungraun) for deterministic instruction-count benchmarks.
 
 ```bash
 cargo bench --bench benchmarks
