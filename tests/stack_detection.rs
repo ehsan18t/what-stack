@@ -596,6 +596,65 @@ fn executable_inside_project_ignores_case_on_windows() {
 }
 
 #[test]
+fn image_prefix_rules_reject_companion_images_and_non_boundary_names() {
+    for image in [
+        "prometheuscommunity/postgres-exporter:v0.15.0",
+        "bitnami/postgres_exporter",
+        "prom/mysqld-exporter:v0.15.1",
+        "nginx/nginx-prometheus-exporter:1.1",
+        "quay.io/prometheuscommunity/elasticsearch-exporter",
+        "kbudde/rabbitmq-exporter",
+        "opensearchproject/opensearch-dashboards:2",
+        "postgrest/postgrest:v12",
+        "registry.opensource.zalan.do/acid/postgres-operator",
+        "bitnami/mariadb-backup",
+        "linuxserver/mysql-workbench",
+        "mysql/mysql-shell:8.0",
+        "bitnami/elasticsearch-curator",
+        "thomseddon/traefik-forward-auth:2",
+        "rediscommander/redis-commander",
+        "redis/redisinsight:latest",
+        "oliver006/redis_exporter",
+        "provectuslabs/kafka-ui",
+    ] {
+        assert_eq!(detect_from_image(image), None, "image {image}");
+    }
+}
+
+#[test]
+fn image_prefix_rules_keep_service_images_and_variants() {
+    for (image, expected) in [
+        ("postgres:16", "PostgreSQL"),
+        ("bitnami/postgresql:16", "PostgreSQL"),
+        ("nginx:alpine", "Nginx"),
+        ("nginxinc/nginx-unprivileged:stable", "Nginx"),
+        ("jwilder/nginx-proxy", "Nginx"),
+        ("library/redis", "Redis"),
+        ("redis/redis-stack-server:7.2", "Redis"),
+        ("bitnami/redis-sentinel:7.2", "Redis"),
+        ("bitnami/redis-cluster", "Redis"),
+        ("postgis/postgis:16-3.4", "PostgreSQL"),
+        ("timescale/timescaledb:latest-pg16", "PostgreSQL"),
+        ("timescale/timescaledb-ha:pg16", "PostgreSQL"),
+        ("apache/kafka:3.8.0", "Kafka"),
+        ("bitnami/kafka:3.8", "Kafka"),
+        ("mysql/mysql-server:8.0", "MySQL"),
+        ("elasticsearch:8.15.0", "Elasticsearch"),
+        ("rabbitmq:3-management", "RabbitMQ"),
+        ("oven/bun:1", "Bun"),
+        ("denoland/deno:alpine", "Deno"),
+        ("php:8.3-apache", "PHP"),
+        ("php:8.3-fpm-alpine", "PHP"),
+    ] {
+        assert_eq!(
+            text(detect_from_image(image)),
+            Some(expected),
+            "image {image}"
+        );
+    }
+}
+
+#[test]
 fn config_files_with_non_utf8_text_are_still_scanned() {
     let little_endian = TempDir::new().expect("temp dir");
     let mut bytes = vec![0xFF, 0xFE];
