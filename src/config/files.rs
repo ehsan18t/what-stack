@@ -257,6 +257,65 @@ mod tests {
         assert_eq!(decode_text(big), "fastapi\n");
     }
 
+    /// Runtime dependency names read through `ProjectFiles` from a
+    /// `package.json` with these exact bytes.
+    fn runtime_dependencies(bytes: &[u8]) -> Vec<String> {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("package.json"), bytes).expect("write package.json");
+        let files = ProjectFiles::read(dir.path()).expect("read project dir");
+        files.node_dependencies(dir.path()).runtime.clone()
+    }
+
+    const PACKAGE_JSON: &str =
+        r#"{ "name": "web", "dependencies": { "next": "15", "react": "19" } }"#;
+
+    #[test]
+    fn package_json_with_utf8_byte_order_mark_is_read() {
+        let bytes: Vec<u8> = [0xEF, 0xBB, 0xBF]
+            .into_iter()
+            .chain(PACKAGE_JSON.bytes())
+            .collect();
+        assert_eq!(runtime_dependencies(&bytes), ["next", "react"]);
+    }
+
+    #[test]
+    fn package_json_in_utf16_is_read() {
+        let little = utf16_with_bom(PACKAGE_JSON, [0xFF, 0xFE], u16::to_le_bytes);
+        assert_eq!(runtime_dependencies(&little), ["next", "react"]);
+
+        let big = utf16_with_bom(PACKAGE_JSON, [0xFE, 0xFF], u16::to_be_bytes);
+        assert_eq!(runtime_dependencies(&big), ["next", "react"]);
+    }
+
+    #[test]
+    fn package_json_is_read_up_to_the_scan_cap() {
+        let cap = usize::try_from(MAX_SCAN_BYTES).expect("cap fits in usize");
+        let padding = |len: usize| "x".repeat(len);
+
+        // Dependencies before a long tail are all read.
+        let early = format!(
+            r#"{{"dependencies": {{"next": "15"}}, "description": "{}"}}"#,
+            padding(cap)
+        );
+        assert_eq!(runtime_dependencies(early.as_bytes()), ["next"]);
+
+        // The cap falls inside the second key of the dependencies object:
+        // names read before it count, the cut one does not.
+        let head = r#"{"description": ""#;
+        let tail = r#"", "dependencies": {"before": "1", "after": "2"}}"#;
+        let cut = tail.find("after").expect("tail names after") + 2;
+        let straddling = format!("{head}{}{tail}", padding(cap - head.len() - cut));
+        assert_eq!(straddling.len(), cap + tail.len() - cut);
+        assert_eq!(runtime_dependencies(straddling.as_bytes()), ["before"]);
+
+        // Dependencies wholly after the cap are not seen.
+        let late = format!(
+            r#"{{"description": "{}", "dependencies": {{"next": "15"}}}}"#,
+            padding(cap)
+        );
+        assert_eq!(runtime_dependencies(late.as_bytes()), Vec::<String>::new());
+    }
+
     #[test]
     fn decode_text_replaces_invalid_utf8_instead_of_failing() {
         assert_eq!(decode_text(b"caf\xe9 flask".to_vec()), "caf\u{fffd} flask");

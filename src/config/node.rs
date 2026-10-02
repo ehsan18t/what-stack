@@ -153,6 +153,8 @@ fn split_json_string(body: &str) -> Option<(&str, &str)> {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+
     use super::*;
 
     #[test]
@@ -240,5 +242,180 @@ mod tests {
             NodeDependencies::default(),
             "a malformed value stops the scan"
         );
+    }
+
+    /// A generated JSON value for the scanner property test.
+    #[derive(Clone, Debug)]
+    enum Json {
+        Null,
+        Bool(bool),
+        Number(i64),
+        Text(String),
+        Array(Vec<Self>),
+        Object(Vec<(String, Self)>),
+    }
+
+    /// Serializes generated values with varied whitespace between tokens.
+    struct Writer {
+        out: String,
+        spaces: Vec<&'static str>,
+        next_space: usize,
+    }
+
+    impl Writer {
+        fn space(&mut self) {
+            if !self.spaces.is_empty() {
+                self.out
+                    .push_str(self.spaces[self.next_space % self.spaces.len()]);
+                self.next_space += 1;
+            }
+        }
+
+        fn string(&mut self, text: &str) {
+            self.out.push('"');
+            self.out.push_str(&escape(text));
+            self.out.push('"');
+        }
+
+        fn value(&mut self, value: &Json) {
+            match value {
+                Json::Null => self.out.push_str("null"),
+                Json::Bool(flag) => self.out.push_str(if *flag { "true" } else { "false" }),
+                Json::Number(number) => self.out.push_str(&number.to_string()),
+                Json::Text(text) => self.string(text),
+                Json::Array(items) => {
+                    self.out.push('[');
+                    for (index, item) in items.iter().enumerate() {
+                        if index > 0 {
+                            self.out.push(',');
+                        }
+                        self.space();
+                        self.value(item);
+                    }
+                    self.space();
+                    self.out.push(']');
+                }
+                Json::Object(entries) => self.object(entries),
+            }
+        }
+
+        fn object(&mut self, entries: &[(String, Json)]) {
+            self.out.push('{');
+            for (index, (key, value)) in entries.iter().enumerate() {
+                if index > 0 {
+                    self.out.push(',');
+                }
+                self.space();
+                self.string(key);
+                self.space();
+                self.out.push(':');
+                self.space();
+                self.value(value);
+            }
+            self.space();
+            self.out.push('}');
+        }
+    }
+
+    /// JSON string body for `text`: the raw form the scanner returns.
+    fn escape(text: &str) -> String {
+        use std::fmt::Write as _;
+
+        let mut escaped = String::new();
+        for c in text.chars() {
+            match c {
+                '"' => escaped.push_str("\\\""),
+                '\\' => escaped.push_str("\\\\"),
+                '\n' => escaped.push_str("\\n"),
+                c if c.is_control() => {
+                    write!(escaped, "\\u{:04x}", u32::from(c)).expect("write to a String");
+                }
+                c => escaped.push(c),
+            }
+        }
+        escaped
+    }
+
+    /// Short text full of characters that matter to the scanner.
+    fn tricky_text() -> impl Strategy<Value = String> {
+        "[a-z@/._ {}\\[\\]\":,\\\\\n\u{e9}\u{1f4a5}-]{0,10}"
+    }
+
+    /// Object keys, including the dependency keys so they appear nested.
+    fn any_key() -> impl Strategy<Value = String> {
+        prop_oneof![
+            3 => tricky_text(),
+            1 => Just("dependencies".to_owned()),
+            1 => Just("devDependencies".to_owned()),
+        ]
+    }
+
+    fn any_json() -> impl Strategy<Value = Json> {
+        let leaf = prop_oneof![
+            Just(Json::Null),
+            any::<bool>().prop_map(Json::Bool),
+            any::<i64>().prop_map(Json::Number),
+            tricky_text().prop_map(Json::Text),
+        ];
+        leaf.prop_recursive(3, 32, 4, |inner| {
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..4).prop_map(Json::Array),
+                prop::collection::vec((any_key(), inner), 0..4).prop_map(Json::Object),
+            ]
+        })
+    }
+
+    /// A dependency map: package names with version strings.
+    fn dependency_map() -> impl Strategy<Value = Option<Vec<(String, String)>>> {
+        prop::option::of(prop::collection::vec((tricky_text(), tricky_text()), 0..6))
+    }
+
+    fn dependency_entry(map: &[(String, String)]) -> Json {
+        Json::Object(
+            map.iter()
+                .map(|(name, version)| (name.clone(), Json::Text(version.clone())))
+                .collect(),
+        )
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+
+        #[test]
+        fn scanner_returns_exactly_the_top_level_dependency_names(
+            others in prop::collection::vec(
+                (tricky_text().prop_filter("not a dependency key", |key| {
+                    key != "dependencies" && key != "devDependencies"
+                }), any_json()),
+                0..6,
+            ),
+            runtime in dependency_map(),
+            dev in dependency_map(),
+            positions in (any::<prop::sample::Index>(), any::<prop::sample::Index>()),
+            spaces in prop::collection::vec(prop::sample::select(&["", " ", "\n  ", "\t", "\r\n"][..]), 0..4),
+            bom in any::<bool>(),
+        ) {
+            let mut entries = others;
+            if let Some(map) = &runtime {
+                let at = positions.0.index(entries.len() + 1);
+                entries.insert(at, ("dependencies".to_owned(), dependency_entry(map)));
+            }
+            if let Some(map) = &dev {
+                let at = positions.1.index(entries.len() + 1);
+                entries.insert(at, ("devDependencies".to_owned(), dependency_entry(map)));
+            }
+
+            let mut writer = Writer { out: String::new(), spaces, next_space: 0 };
+            if bom {
+                writer.out.push('\u{feff}');
+            }
+            writer.object(&entries);
+
+            let names = |map: Option<Vec<(String, String)>>| -> Vec<String> {
+                map.unwrap_or_default().iter().map(|(name, _)| escape(name)).collect()
+            };
+            let expected = NodeDependencies { runtime: names(runtime), dev: names(dev) };
+            prop_assert_eq!(dependency_names(&writer.out), expected, "{}", writer.out);
+        }
     }
 }
