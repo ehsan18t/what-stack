@@ -170,31 +170,22 @@ impl StackDetector {
 
     fn cached_project_root(&mut self, start: &Path) -> Option<PathBuf> {
         let mut visited = Vec::new();
-
-        for dir in walk_ancestors(start, self.home.as_deref()) {
-            if let Some(cached) = self.project_cache.get(&dir).cloned() {
-                for path in visited {
-                    self.project_cache.insert(path, cached.clone());
+        let result = walk_ancestors(start, self.home.as_deref())
+            .find_map(|dir| {
+                if let Some(cached) = self.project_cache.get(dir) {
+                    return Some(cached.clone());
                 }
-                return cached;
-            }
-
-            visited.push(dir.clone());
-
-            if has_marker(&dir) {
-                let result = Some(dir);
-                for path in visited {
-                    self.project_cache.insert(path, result.clone());
-                }
-                return result;
-            }
-        }
+                visited.push(dir);
+                has_marker(dir).then(|| Some(dir.to_path_buf()))
+            })
+            .flatten();
 
         for path in visited {
-            self.project_cache.insert(path, None);
+            self.project_cache
+                .insert(path.to_path_buf(), result.clone());
         }
 
-        None
+        result
     }
 
     fn cached_config_stack(

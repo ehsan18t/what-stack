@@ -103,7 +103,9 @@ pub fn project_root_candidates(input: ProjectInput<'_>) -> impl Iterator<Item = 
 /// ```
 #[must_use]
 pub fn find_project_root(start: &Path, home: Option<&Path>) -> Option<PathBuf> {
-    walk_ancestors(start, home).find(|dir| has_marker(dir))
+    walk_ancestors(start, home)
+        .find(|dir| has_marker(dir))
+        .map(Path::to_path_buf)
 }
 
 /// Return the display name for a project root path.
@@ -124,39 +126,17 @@ pub fn project_name(root: &Path) -> Option<Cow<'_, str>> {
     root.file_name().map(OsStr::to_string_lossy)
 }
 
+/// Directories tested by one upward walk from `start`, nearest first.
+///
+/// The walk stops before `home` and after [`MAX_WALK_DEPTH`] directories.
 pub fn walk_ancestors<'a>(
     start: &'a Path,
     home: Option<&'a Path>,
-) -> impl Iterator<Item = PathBuf> + 'a {
-    let mut current = Some(start.to_path_buf());
-    let mut depth = 0;
-
-    std::iter::from_fn(move || {
-        let dir = current.as_ref()?.clone();
-
-        if depth >= MAX_WALK_DEPTH {
-            current = None;
-            return None;
-        }
-
-        if let Some(home_dir) = home
-            && paths_equal(&dir, home_dir)
-        {
-            current = None;
-            return None;
-        }
-
-        depth += 1;
-
-        let mut next = dir.clone();
-        if next.pop() && next != dir {
-            current = Some(next);
-        } else {
-            current = None;
-        }
-
-        Some(dir)
-    })
+) -> impl Iterator<Item = &'a Path> + 'a {
+    start
+        .ancestors()
+        .take(MAX_WALK_DEPTH)
+        .take_while(move |dir| home.is_none_or(|home| !paths_equal(dir, home)))
 }
 
 fn absolute_cmd_parents(cmd: &[OsString]) -> impl Iterator<Item = &Path> + '_ {
