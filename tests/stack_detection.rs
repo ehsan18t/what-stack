@@ -20,6 +20,20 @@ fn text(label: Option<StackLabel>) -> Option<&'static str> {
     }
 }
 
+/// Fake home directory for tests that expect a walk to find nothing.
+///
+/// Fixtures are created inside it with [`temp_in`] and it is passed as the
+/// walk ceiling, so marker files above the system temp directory cannot turn
+/// an expected miss into a hit. On Windows `%TEMP%` lives under the user
+/// profile, where a stray `package.json` is common.
+fn fake_home() -> TempDir {
+    TempDir::new().expect("fake home")
+}
+
+fn temp_in(home: &TempDir) -> TempDir {
+    TempDir::new_in(home.path()).expect("temp dir")
+}
+
 fn write_file(root: &Path, relative: &str, contents: &str) {
     let path = root.join(relative);
     std::fs::create_dir_all(path.parent().expect("test path has parent"))
@@ -261,8 +275,9 @@ fn project_detection_walks_upward_and_respects_home_ceiling() {
 
 #[test]
 fn project_detection_returns_none_without_markers_and_respects_depth_limit() {
-    let unmarked = TempDir::new().expect("temp dir");
-    assert_eq!(find_project_root(unmarked.path(), None), None);
+    let home = fake_home();
+    let unmarked = temp_in(&home);
+    assert_eq!(find_project_root(unmarked.path(), Some(home.path())), None);
 
     let project = TempDir::new().expect("temp dir");
     write_file(project.path(), "package.json", "{}");
@@ -408,11 +423,18 @@ fn detector_home_ceiling_comes_only_from_the_detector() {
 }
 
 #[test]
-fn detector_new_and_default_use_home_dir() {
-    let expected: Option<PathBuf> = what_stack::home_dir();
-    assert_eq!(StackDetector::new().home(), expected.as_deref());
-    assert_eq!(StackDetector::default().home(), expected.as_deref());
+fn detector_home_is_the_configured_ceiling() {
+    let home = PathBuf::from("/not/a/real/home");
+    assert_eq!(
+        StackDetector::with_home(Some(home.clone())).home(),
+        Some(home.as_path())
+    );
     assert_eq!(StackDetector::with_home(None).home(), None);
+    assert_eq!(
+        StackDetector::new().home(),
+        StackDetector::default().home(),
+        "Default is the same as new"
+    );
 }
 
 #[test]
@@ -558,13 +580,14 @@ fn framework_labels_are_final_and_tool_labels_accept_config() {
 
 #[test]
 fn stack_detector_caches_project_and_config_detection_results() {
-    let project = TempDir::new().expect("temp dir");
+    let home = fake_home();
+    let project = temp_in(&home);
     let nested = project.path().join("src");
     std::fs::create_dir_all(&nested).expect("create nested dir");
     write_file(project.path(), "package.json", "{}");
     write_file(project.path(), "next.config.js", "");
 
-    let mut detector = StackDetector::new();
+    let mut detector = StackDetector::with_home(Some(home.path().to_path_buf()));
     let input = ProjectInput::new().cwd(nested.as_path());
     assert_eq!(
         detector.detect_project_root(input).as_deref(),
