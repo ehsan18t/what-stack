@@ -9,23 +9,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Node framework labels from `package.json` dependencies, read with a small built-in scanner (no JSON dependency): `Next.js` from `next` without a config file, `NestJS` from `@nestjs/core` or `nest-cli.json`, `Remix` from Remix packages such as `@remix-run/react` (ahead of `vite.config.*`), and `Express` from `express` when no other Node framework or tool config matches. `react-router.config.*` is `React Router` (React Router v7 framework mode), ahead of `vite.config.*`.
-
 - `Symfony` for PHP projects with `composer.json` plus `symfony.lock` or `bin/console`.
-
 - `Spring Boot` for Maven and Gradle builds that use `org.springframework.boot` (the parent POM, a starter dependency, or the Gradle plugin), outside comment lines. `java`, `mvn`, and `gradle` processes in such a project now get this label.
 - `settings.gradle` and `settings.gradle.kts` are project-root markers and Gradle config rules, so a multi-module Gradle root without its own build script is found and labeled `Java (Gradle)` or `Kotlin (Gradle)`.
-
 - `.sln` and `.slnx` solution files are project-root markers and `.NET` config rules, after `.csproj` and `.fsproj`, so a solution root whose projects live in subdirectories is found and labeled.
-
 - `Phoenix` for Elixir projects whose `mix.exs` depends on `:phoenix` (not `:phoenix_pubsub` or other `:phoenix_*` packages alone), outside comment lines.
 - `erl` and `werl` process names (the BEAM on Windows) map to `Erlang`, in the Erlang and Elixir ecosystem, so they pick up `Elixir` and `Phoenix` project config.
-
 - Images: `confluentinc/cp-kafka` is `Kafka`, `mcr.microsoft.com/mssql/server` (any image under an `mssql` namespace) is `SQL Server`, `pgvector/pgvector` is `PostgreSQL`, `amazoncorretto` is `Java`, and `elixir` is `Elixir`.
 
 ### Changed
 
 - `connect` is a companion image segment, so `kafka-connect`, `cp-kafka-connect`, and similar connector workers no longer get the `Kafka` label.
 - `remix.config.*` is checked before `vite.config.*`, so a project with both is `Remix` instead of `Vite`.
+- The `libc` dependency (Unix only) now accepts any `0.2` release instead of requiring `0.2.186` or newer, so the crate no longer forces a libc upgrade on its users.
+- Reading a project file on Windows skips a redundant metadata call before opening it, which roughly halves the cost of each config file read.
 
 ### Fixed
 
