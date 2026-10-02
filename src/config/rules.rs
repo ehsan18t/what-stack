@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use self::ConfigMatch::{AllOf, Exact, Extension, Prefix};
+use self::ConfigMatch::{AllOf, Exact, Extension, NodeDependency, Prefix};
 use super::files::ProjectFiles;
 use super::python;
 use crate::ecosystem::Ecosystem as E;
@@ -18,6 +18,9 @@ pub enum ConfigMatch {
     AllOf(&'static [&'static str]),
     /// A root entry with this file extension.
     Extension(&'static str),
+    /// `package.json` lists any of these packages under `"dependencies"` or
+    /// `"devDependencies"`.
+    NodeDependency(&'static [&'static str]),
 }
 
 /// One config rule: matcher, label, and the ecosystem of the label.
@@ -30,11 +33,22 @@ pub const CONFIG_RULES: &[ConfigRule] = &[
     (Exact("angular.json"), labels::ANGULAR, E::Node),
     (Prefix("svelte.config"), labels::SVELTEKIT, E::Node),
     (Prefix("astro.config"), labels::ASTRO, E::Node),
-    (Prefix("vite.config"), labels::VITE, E::Node),
+    // React Router v7 framework mode and Remix both build with Vite, so they
+    // come before `vite.config`.
+    (Prefix("react-router.config"), labels::REACT_ROUTER, E::Node),
     (Prefix("remix.config"), labels::REMIX, E::Node),
+    (NodeDependency(REMIX_PACKAGES), labels::REMIX, E::Node),
+    (Exact("nest-cli.json"), labels::NESTJS, E::Node),
+    (NodeDependency(&["@nestjs/core"]), labels::NESTJS, E::Node),
+    // Next.js 13 and later need no config file.
+    (NodeDependency(&["next"]), labels::NEXT_JS, E::Node),
+    (Prefix("vite.config"), labels::VITE, E::Node),
     (Prefix("gatsby-config"), labels::GATSBY, E::Node),
     (Prefix("vue.config"), labels::VUE_CLI, E::Node),
     (Prefix("webpack.config"), labels::WEBPACK, E::Node),
+    // Express is the weakest Node signal: many projects use it beside a
+    // framework or bundler that describes them better.
+    (NodeDependency(&["express"]), labels::EXPRESS, E::Node),
     (Exact("Cargo.toml"), labels::RUST, E::Rust),
     (Exact("go.mod"), labels::GO, E::Go),
     (Exact("go.work"), labels::GO, E::Go),
@@ -50,6 +64,16 @@ pub const CONFIG_RULES: &[ConfigRule] = &[
     (Exact("mix.exs"), labels::ELIXIR, E::Beam),
     (Exact("deno.json"), labels::DENO, E::Deno),
     (Exact("deno.jsonc"), labels::DENO, E::Deno),
+];
+
+/// Remix application packages. `@remix-run/router` is left out: it is the
+/// routing core of React Router 6 and appears in plain React apps.
+const REMIX_PACKAGES: &[&str] = &[
+    "@remix-run/dev",
+    "@remix-run/react",
+    "@remix-run/node",
+    "@remix-run/serve",
+    "@remix-run/cloudflare",
 ];
 
 /// Rules checked after Python detection, in priority order.
@@ -68,7 +92,13 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
 ///
 /// The function scans only `project_root` and checks built-in rules in a fixed
 /// priority order. More specific frontend framework config files are evaluated
-/// before generic runtime markers such as `Cargo.toml` or `go.mod`. Python
+/// before generic runtime markers such as `Cargo.toml` or `go.mod`. Node
+/// projects are also recognized from `package.json` dependencies: `next`
+/// (`Next.js` without a config file), `@nestjs/core` (`NestJS`, also from
+/// `nest-cli.json`), Remix packages such as `@remix-run/react` (`Remix`, even
+/// with `vite.config.ts`), and `express` (`Express`, only when no other Node
+/// framework or tool config matches). `react-router.config.ts` is
+/// `React Router`. Python
 /// projects get a second pass that can identify `Django`, `Flask`, `FastAPI`,
 /// `Starlette`, and `Litestar` from entry files or dependency files. Ruby
 /// projects need `Gemfile` and `config.ru` (`Ruby (Rack)`), plus `bin/rails`
@@ -177,5 +207,6 @@ fn rule_matches(project_root: &Path, files: &ProjectFiles, matcher: ConfigMatch)
             .iter()
             .all(|path| files.contains_path(project_root, path)),
         Extension(extension) => files.contains_extension(extension),
+        NodeDependency(packages) => files.has_node_dependency(project_root, packages),
     }
 }

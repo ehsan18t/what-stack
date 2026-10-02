@@ -284,3 +284,120 @@ fn python_comment_lines_do_not_declare_frameworks() {
     );
     assert_eq!(config_text(pyproject.path()), Some("Litestar"));
 }
+
+/// Build a project from `(relative path, contents)` pairs.
+fn project(files: &[(&str, &str)]) -> TempDir {
+    let dir = TempDir::new().expect("temp dir");
+    for (relative, contents) in files {
+        write_file(dir.path(), relative, contents);
+    }
+    dir
+}
+
+fn node_label(root: &Path) -> Option<&'static str> {
+    text(StackDetector::with_home(None).detect_stack(StackInput::new("node").project_root(root)))
+}
+
+#[test]
+fn node_frameworks_from_package_dependencies() {
+    for (files, expected) in [
+        (
+            &[(
+                "package.json",
+                r#"{"dependencies": {"next": "15.1.0", "react": "19"}}"#,
+            )][..],
+            "Next.js",
+        ),
+        (
+            &[
+                ("package.json", r#"{"dependencies": {"next": "15"}}"#),
+                ("vite.config.ts", "export default {}"),
+            ][..],
+            "Next.js",
+        ),
+        (
+            &[(
+                "package.json",
+                r#"{"dependencies": {"express": "^4.21.0"}}"#,
+            )][..],
+            "Express",
+        ),
+        (
+            &[(
+                "package.json",
+                r#"{"dependencies": {"express": "4", "next": "15"}}"#,
+            )][..],
+            "Next.js",
+        ),
+        (
+            &[
+                ("package.json", r#"{"dependencies": {"express": "4"}}"#),
+                ("vite.config.js", ""),
+            ][..],
+            "Vite",
+        ),
+        (
+            &[("package.json", "{}"), ("nest-cli.json", "{}")][..],
+            "NestJS",
+        ),
+        (
+            &[(
+                "package.json",
+                r#"{"dependencies": {"@nestjs/core": "10", "express": "4"}}"#,
+            )][..],
+            "NestJS",
+        ),
+        (
+            &[
+                (
+                    "package.json",
+                    r#"{"devDependencies": {"@remix-run/dev": "2"}, "dependencies": {"@remix-run/react": "2"}}"#,
+                ),
+                ("vite.config.ts", ""),
+            ][..],
+            "Remix",
+        ),
+        (
+            &[
+                ("package.json", r#"{"dependencies": {"react-router": "7"}}"#),
+                ("react-router.config.ts", ""),
+                ("vite.config.ts", ""),
+            ][..],
+            "React Router",
+        ),
+        (
+            &[
+                (
+                    "package.json",
+                    r#"{"dependencies": {"@remix-run/router": "1", "react": "18"}}"#,
+                ),
+                ("vite.config.ts", ""),
+            ][..],
+            "Vite",
+        ),
+        (
+            &[(
+                "package.json",
+                r#"{"name": "next", "scripts": {"next": "next dev"}, "peerDependencies": {"next": "15"}}"#,
+            )][..],
+            "Node.js",
+        ),
+    ] {
+        let dir = project(files);
+        assert_eq!(node_label(dir.path()), Some(expected), "{files:?}");
+    }
+}
+
+#[test]
+fn node_dependency_rules_stay_in_the_node_ecosystem() {
+    let dir = project(&[
+        ("package.json", r#"{"dependencies": {"express": "4"}}"#),
+        ("go.mod", "module example.com/app\n"),
+    ]);
+    let mut detector = StackDetector::with_home(None);
+    assert_eq!(
+        text(detector.detect_stack(StackInput::new("go").project_root(dir.path()))),
+        Some("Go")
+    );
+    assert_eq!(config_text(dir.path()), Some("Express"));
+}

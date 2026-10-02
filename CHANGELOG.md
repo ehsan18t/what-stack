@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Node framework labels from `package.json` dependencies, read with a small built-in scanner (no JSON dependency): `Next.js` from `next` without a config file, `NestJS` from `@nestjs/core` or `nest-cli.json`, `Remix` from Remix packages such as `@remix-run/react` (ahead of `vite.config.*`), and `Express` from `express` when no other Node framework or tool config matches. `react-router.config.*` is `React Router` (React Router v7 framework mode), ahead of `vite.config.*`.
+
+### Changed
+
+- `remix.config.*` is checked before `vite.config.*`, so a project with both is `Remix` instead of `Vite`.
+
 ### Fixed
 
 - `find_project_root` and the other project walks test the current directory for a relative single-name start: `find_project_root("src")` with `Cargo.toml` in the working directory returns `.` instead of `None`.

@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{self, Read};
@@ -8,6 +9,8 @@ use crate::text::file_extension;
 #[derive(Debug)]
 pub(super) struct ProjectFiles {
     names: HashSet<String>,
+    /// Dependency names from `package.json`, read on first use.
+    node_dependencies: OnceCell<Vec<String>>,
 }
 
 impl ProjectFiles {
@@ -18,7 +21,10 @@ impl ProjectFiles {
             .filter_map(|entry| entry.file_name().into_string().ok())
             .collect();
 
-        Some(Self { names })
+        Some(Self {
+            names,
+            node_dependencies: OnceCell::new(),
+        })
     }
 
     pub(super) fn contains_exact(&self, target: &str) -> bool {
@@ -65,6 +71,19 @@ impl ProjectFiles {
         }
 
         read_text_file(&project_root.join(file_name))
+    }
+
+    /// Whether `package.json` lists any of `packages` under
+    /// `"dependencies"` or `"devDependencies"`.
+    pub(super) fn has_node_dependency(&self, project_root: &Path, packages: &[&str]) -> bool {
+        self.node_dependencies
+            .get_or_init(|| {
+                self.read_text(project_root, "package.json")
+                    .map(|json| super::node::dependency_names(&json))
+                    .unwrap_or_default()
+            })
+            .iter()
+            .any(|name| packages.contains(&name.as_str()))
     }
 
     /// Like [`read_text`](Self::read_text), but `None` when the file is

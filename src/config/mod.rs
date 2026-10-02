@@ -4,6 +4,7 @@
 //! a project root. It does not walk parents or recurse into children.
 
 mod files;
+mod node;
 mod python;
 mod rules;
 

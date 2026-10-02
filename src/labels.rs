@@ -49,6 +49,9 @@ labels! {
     ASTRO = Framework("Astro");
     REMIX = Framework("Remix");
     GATSBY = Framework("Gatsby");
+    REACT_ROUTER = Framework("React Router");
+    NESTJS = Framework("NestJS");
+    EXPRESS = Framework("Express");
     HUGO = Framework("Hugo");
     JEKYLL = Framework("Jekyll");
     DJANGO = Framework("Django");
