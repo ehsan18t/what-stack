@@ -62,6 +62,7 @@ labels! {
     RAILS = Framework("Rails");
     RUBY_RACK = Framework("Ruby (Rack)");
     LARAVEL = Framework("Laravel");
+    PHOENIX = Framework("Phoenix");
     SPRING_BOOT = Framework("Spring Boot");
     SYMFONY = Framework("Symfony");
 

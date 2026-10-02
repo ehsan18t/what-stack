@@ -30,7 +30,12 @@ pub const PROCESS_RULES: &[ProcessRule] = &[
     (&["php", "php-fpm"], labels::PHP, E::Php),
     (&["perl"], labels::PERL, E::Other),
     (&["cargo", "rustc"], labels::RUST, E::Rust),
-    (&["erlang", "beam.smp"], labels::ERLANG, E::Beam),
+    // On Windows the BEAM runs as `erl.exe` or `werl.exe`.
+    (
+        &["erlang", "beam.smp", "erl", "werl"],
+        labels::ERLANG,
+        E::Beam,
+    ),
     (&["elixir"], labels::ELIXIR, E::Beam),
     (&["dart"], labels::DART, E::Other),
     (&["swift"], labels::SWIFT, E::Other),

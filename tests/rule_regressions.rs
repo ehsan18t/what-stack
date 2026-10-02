@@ -528,3 +528,46 @@ fn dotnet_solution_files_mark_project_roots() {
     let both = project(&[("Shop.sln", ""), ("Shop.fsproj", "")]);
     assert_eq!(config_text(both.path()), Some(".NET (F#)"));
 }
+
+const PHOENIX_MIX: &str = r#"defmodule Shop.MixProject do
+  use Mix.Project
+
+  defp deps do
+    [
+      {:phoenix, "~> 1.7.14"},
+      {:phoenix_live_view, "~> 1.0"}
+    ]
+  end
+end
+"#;
+
+#[test]
+fn phoenix_projects_and_windows_beam_processes() {
+    let mut detector = StackDetector::with_home(None);
+    let phoenix = project(&[("mix.exs", PHOENIX_MIX)]);
+    assert_eq!(config_text(phoenix.path()), Some("Phoenix"));
+
+    for process in ["erl.exe", "werl.exe", "beam.smp", "elixir"] {
+        assert_eq!(
+            text(detector.detect_stack(StackInput::new(process).project_root(phoenix.path()))),
+            Some("Phoenix"),
+            "{process}"
+        );
+    }
+    assert_eq!(
+        text(what_stack::detect_from_process("ERL.EXE")),
+        Some("Erlang")
+    );
+    assert_eq!(
+        text(what_stack::detect_from_process("werl")),
+        Some("Erlang")
+    );
+
+    for mix in [
+        "defp deps, do: [{:phoenix_pubsub, \"~> 2.1\"}]\n",
+        "# {:phoenix, \"~> 1.7\"} once we add the web layer\ndefp deps, do: []\n",
+    ] {
+        let dir = project(&[("mix.exs", mix)]);
+        assert_eq!(config_text(dir.path()), Some("Elixir"), "{mix}");
+    }
+}

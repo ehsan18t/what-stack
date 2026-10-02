@@ -93,6 +93,7 @@ pub const CONFIG_RULES: &[ConfigRule] = &[
         E::Php,
     ),
     (Exact("composer.json"), labels::PHP, E::Php),
+    (FileToken("mix.exs", ":phoenix"), labels::PHOENIX, E::Beam),
     (Exact("mix.exs"), labels::ELIXIR, E::Beam),
     (Exact("deno.json"), labels::DENO, E::Deno),
     (Exact("deno.jsonc"), labels::DENO, E::Deno),
@@ -142,7 +143,8 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
 /// for `Rails`. PHP projects with `artisan` next to `composer.json` are
 /// `Laravel`, and those with `symfony.lock` or `bin/console` are `Symfony`.
 /// Maven and Gradle builds that use `org.springframework.boot` are
-/// `Spring Boot`; a multi-module Gradle root with only `settings.gradle` or
+/// `Spring Boot`, and a `mix.exs` that depends on `:phoenix` is `Phoenix`; a
+/// multi-module Gradle root with only `settings.gradle` or
 /// `settings.gradle.kts` is a Gradle project.
 ///
 /// This function knows nothing about the process, so it uses the same rules

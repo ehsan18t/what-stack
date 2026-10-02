@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - `.sln` and `.slnx` solution files are project-root markers and `.NET` config rules, after `.csproj` and `.fsproj`, so a solution root whose projects live in subdirectories is found and labeled.
 
+- `Phoenix` for Elixir projects whose `mix.exs` depends on `:phoenix` (not `:phoenix_pubsub` or other `:phoenix_*` packages alone), outside comment lines.
+- `erl` and `werl` process names (the BEAM on Windows) map to `Erlang`, in the Erlang and Elixir ecosystem, so they pick up `Elixir` and `Phoenix` project config.
+
 ### Changed
 
 - `remix.config.*` is checked before `vite.config.*`, so a project with both is `Remix` instead of `Vite`.
