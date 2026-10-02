@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::path::Path;
 
 use super::files::ProjectFiles;
@@ -5,15 +6,19 @@ use crate::{StackLabel, labels};
 
 const PYTHON_ENTRY_FILES: &[&str] = &["app.py", "main.py", "server.py", "wsgi.py", "asgi.py"];
 
-const PYTHON_DEPENDENCY_FILES: &[&str] = &[
+/// Files that declare a project's direct dependencies.
+const PYTHON_MANIFEST_FILES: &[&str] = &[
     "pyproject.toml",
     "requirements.txt",
     "requirements-dev.txt",
     "Pipfile",
-    "poetry.lock",
-    "uv.lock",
     "setup.py",
 ];
+
+/// Lock files. They mark a Python project, but they also list transitive
+/// dependencies (`starlette` through `mcp` or `fastapi`), so they only confirm
+/// frameworks a manifest names and never add one.
+const PYTHON_LOCK_FILES: &[&str] = &["poetry.lock", "uv.lock"];
 
 const DJANGO_SOURCE_PATTERNS: &[&str] = &[
     "django.core.wsgi",
@@ -84,19 +89,15 @@ pub(super) fn detect_python_project(
         PYTHON_ENTRY_FILES,
         detect_python_framework_from_source,
     )
-    .or_else(|| {
-        detect_in_files(
-            project_root,
-            files,
-            PYTHON_DEPENDENCY_FILES,
-            detect_python_framework_from_dependency_text,
-        )
-    })
+    .or_else(|| detect_python_framework_from_dependencies(project_root, files))
     .or_else(|| (!python_process).then_some(labels::PYTHON))
 }
 
 fn is_python_project(files: &ProjectFiles, python_process: bool) -> bool {
-    if files.contains_exact("manage.py") || files.any_exact(PYTHON_DEPENDENCY_FILES) {
+    if files.contains_exact("manage.py")
+        || files.any_exact(PYTHON_MANIFEST_FILES)
+        || files.any_exact(PYTHON_LOCK_FILES)
+    {
         return true;
     }
 
@@ -120,11 +121,67 @@ fn detect_in_files(
         })
 }
 
-fn detect_python_framework_from_dependency_text(normalized: &str) -> Option<StackLabel> {
-    PYTHON_DEPENDENCY_PATTERNS
+/// The first framework a manifest declares that every lock file confirms.
+///
+/// Manifests are checked in order, and within one manifest the frameworks in
+/// [`PYTHON_DEPENDENCY_PATTERNS`] order. A lock file that was read completely
+/// must list the framework as a package; a lock file longer than the read cap
+/// cannot rule it out. Lock files are read only once a manifest names a
+/// framework.
+fn detect_python_framework_from_dependencies(
+    project_root: &Path,
+    files: &ProjectFiles,
+) -> Option<StackLabel> {
+    let locks = OnceCell::new();
+    let confirmed_by_locks = |package: &str| {
+        locks
+            .get_or_init(|| read_lock_files(project_root, files))
+            .iter()
+            .all(|lock| lock_lists_package(lock, package))
+    };
+
+    PYTHON_MANIFEST_FILES
         .iter()
-        .find(|(package, _)| contains_dependency_token(normalized, package))
-        .map(|(_, label)| label.clone())
+        .filter_map(|file_name| files.read_text(project_root, file_name))
+        .find_map(|mut manifest| {
+            manifest.make_ascii_lowercase();
+            PYTHON_DEPENDENCY_PATTERNS
+                .iter()
+                .find(|(package, _)| {
+                    declares_dependency(&manifest, package) && confirmed_by_locks(package)
+                })
+                .map(|(_, label)| label.clone())
+        })
+}
+
+fn read_lock_files(project_root: &Path, files: &ProjectFiles) -> Vec<String> {
+    PYTHON_LOCK_FILES
+        .iter()
+        .filter_map(|file_name| files.read_complete_text(project_root, file_name))
+        .map(|mut lock| {
+            lock.make_ascii_lowercase();
+            lock
+        })
+        .collect()
+}
+
+/// Whether a lowercased `uv.lock` or `poetry.lock` has a package entry named
+/// `package`. Both write `name = "package"` in each `[[package]]` table.
+fn lock_lists_package(lock: &str, package: &str) -> bool {
+    lock.lines().any(|line| {
+        line.trim()
+            .strip_prefix("name = \"")
+            .and_then(|rest| rest.strip_suffix('"'))
+            == Some(package)
+    })
+}
+
+/// Whether a lowercased manifest names `package` outside `#` comment lines.
+fn declares_dependency(manifest: &str, package: &str) -> bool {
+    manifest
+        .lines()
+        .filter(|line| !line.trim_start().starts_with('#'))
+        .any(|line| contains_dependency_token(line, package))
 }
 
 fn detect_python_framework_from_source(normalized: &str) -> Option<StackLabel> {

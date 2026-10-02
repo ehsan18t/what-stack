@@ -206,3 +206,81 @@ fn unknown_binaries_inside_the_project_prefer_compiled_ecosystems() {
         Some("Vite")
     );
 }
+
+fn config_text(root: &Path) -> Option<&'static str> {
+    text(what_stack::detect_from_config(root))
+}
+
+#[test]
+fn python_lock_files_do_not_add_transitive_frameworks() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(
+        project.path(),
+        "pyproject.toml",
+        "[project]\nname = \"agent\"\ndependencies = [\"mcp>=1.2\"]\n",
+    );
+    write_file(
+        project.path(),
+        "uv.lock",
+        "[[package]]\nname = \"mcp\"\n\n[[package]]\nname = \"starlette\"\n",
+    );
+    assert_eq!(config_text(project.path()), Some("Python"));
+
+    let poetry_only = TempDir::new().expect("temp dir");
+    write_file(
+        poetry_only.path(),
+        "poetry.lock",
+        "[[package]]\nname = \"fastapi\"\n",
+    );
+    assert_eq!(config_text(poetry_only.path()), Some("Python"));
+}
+
+#[test]
+fn python_lock_files_confirm_declared_frameworks() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(
+        project.path(),
+        "pyproject.toml",
+        "[project]\ndescription = \"Port of our Flask app\"\ndependencies = [\"fastapi\"]\n",
+    );
+    write_file(
+        project.path(),
+        "uv.lock",
+        "[[package]]\nname = \"fastapi\"\n\n[[package]]\nname = \"starlette\"\n",
+    );
+    assert_eq!(
+        config_text(project.path()),
+        Some("FastAPI"),
+        "the lock rules out the Flask mention in the description"
+    );
+
+    let unlocked = TempDir::new().expect("temp dir");
+    write_file(unlocked.path(), "requirements.txt", "fastapi==0.115\n");
+    assert_eq!(config_text(unlocked.path()), Some("FastAPI"));
+
+    // A lock longer than the read cap cannot rule a framework out.
+    let large = TempDir::new().expect("temp dir");
+    write_file(large.path(), "requirements.txt", "flask\n");
+    let filler = "[[package]]\nname = \"other\"\n".repeat(4096);
+    write_file(large.path(), "poetry.lock", &filler);
+    assert_eq!(config_text(large.path()), Some("Flask"));
+}
+
+#[test]
+fn python_comment_lines_do_not_declare_frameworks() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(
+        project.path(),
+        "requirements.txt",
+        "# flask was replaced by plain wsgi\n  # django too\nrequests==2.32\n",
+    );
+    assert_eq!(config_text(project.path()), Some("Python"));
+
+    let pyproject = TempDir::new().expect("temp dir");
+    write_file(
+        pyproject.path(),
+        "pyproject.toml",
+        "[project]\n# TODO: move to fastapi\ndependencies = [\"litestar\"]\n",
+    );
+    assert_eq!(config_text(pyproject.path()), Some("Litestar"));
+}

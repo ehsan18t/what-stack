@@ -66,6 +66,22 @@ impl ProjectFiles {
 
         read_text_file(&project_root.join(file_name))
     }
+
+    /// Like [`read_text`](Self::read_text), but `None` when the file is
+    /// longer than [`MAX_SCAN_BYTES`], for callers that must see every line.
+    pub(super) fn read_complete_text(
+        &self,
+        project_root: &Path,
+        file_name: &str,
+    ) -> Option<String> {
+        if !self.contains_exact(file_name) {
+            return None;
+        }
+
+        read_regular_file_prefix(&project_root.join(file_name))
+            .filter(|(_, complete)| *complete)
+            .map(|(bytes, _)| decode_text(bytes))
+    }
 }
 
 /// Suffixes accepted after a config name prefix: `next.config` matches
@@ -80,13 +96,14 @@ fn matches_config_name_prefix(name: &str, pattern: &str) -> bool {
 /// Read the first [`MAX_SCAN_BYTES`] of a regular file as text, with the same
 /// safety and decoding rules as [`ProjectFiles::read_text`].
 pub(super) fn read_text_file(path: &Path) -> Option<String> {
-    read_regular_file_prefix(path).map(decode_text)
+    read_regular_file_prefix(path).map(|(bytes, _)| decode_text(bytes))
 }
 
 /// Maximum number of bytes read from one project file.
 const MAX_SCAN_BYTES: u64 = 64 * 1024;
 
-/// Read up to [`MAX_SCAN_BYTES`] from `path` only when it is a regular file.
+/// Read up to [`MAX_SCAN_BYTES`] from `path` only when it is a regular file,
+/// with whether that covered the whole file.
 ///
 /// A FIFO (or a symlink to `/dev/tty`) under a scanned name such as `app.py`
 /// would block a plain `open` forever. The type is checked before opening, the
@@ -96,20 +113,21 @@ const MAX_SCAN_BYTES: u64 = 64 * 1024;
 /// Windows has no FIFOs in directory listings and refuses to open a directory
 /// as a file, so the check after opening is enough there and the extra
 /// metadata call is skipped.
-fn read_regular_file_prefix(path: &Path) -> Option<Vec<u8>> {
+fn read_regular_file_prefix(path: &Path) -> Option<(Vec<u8>, bool)> {
     #[cfg(not(windows))]
     if !std::fs::metadata(path).ok()?.is_file() {
         return None;
     }
 
     let file = open_for_scan(path).ok()?;
-    if !file.metadata().ok()?.is_file() {
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() {
         return None;
     }
 
     let mut bytes = Vec::new();
     file.take(MAX_SCAN_BYTES).read_to_end(&mut bytes).ok()?;
-    Some(bytes)
+    Some((bytes, metadata.len() <= MAX_SCAN_BYTES))
 }
 
 #[cfg(unix)]

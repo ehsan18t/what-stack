@@ -97,6 +97,11 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
 ///
 /// Directory entries are read once into a small in-memory set. Source and
 /// dependency files used for Python detection are capped to the first 64 KiB.
+/// Python frameworks come from entry files and from dependency manifests
+/// (`pyproject.toml`, `requirements.txt`, `requirements-dev.txt`, `Pipfile`,
+/// `setup.py`), ignoring `#` comment lines. Lock files (`uv.lock`,
+/// `poetry.lock`) list transitive dependencies, so they only confirm a
+/// framework a manifest names and never add one.
 #[must_use]
 pub fn detect_from_config(project_root: &Path) -> Option<StackLabel> {
     detect_for_scope(project_root, ConfigScope::All)
