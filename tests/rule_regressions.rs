@@ -105,6 +105,65 @@ fn go_run_binaries_get_the_go_label_from_the_project() {
 }
 
 #[test]
+fn native_node_tools_in_node_modules_prefer_node_config() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(
+        project.path(),
+        "go.mod",
+        "module example.com/app
+",
+    );
+    write_file(project.path(), "package.json", "{}");
+    write_file(project.path(), "vite.config.js", "");
+
+    for exe in [
+        "node_modules/@esbuild/linux-x64/bin/esbuild",
+        "node_modules/@esbuild/win32-x64/esbuild.exe",
+        "node_modules/.pnpm/@biomejs+cli-linux-x64@1.9.4/node_modules/@biomejs/cli-linux-x64/biome",
+        "web/node_modules/turbo-linux-64/bin/turbo",
+    ] {
+        let exe = project.path().join(exe);
+        assert_eq!(
+            detect_unknown(&exe, project.path()),
+            Some("Vite"),
+            "{exe:?}"
+        );
+    }
+
+    // Outside node_modules an unknown binary is still most likely the Go
+    // program itself.
+    let air = project.path().join("tmp/main");
+    assert_eq!(detect_unknown(&air, project.path()), Some("Go"));
+
+    // Node rules come first, then every rule as before.
+    let api = TempDir::new().expect("temp dir");
+    write_file(
+        api.path(),
+        "go.mod",
+        "module example.com/api
+",
+    );
+    write_file(
+        api.path(),
+        "package.json",
+        r#"{"dependencies": {"express": "4"}}"#,
+    );
+    let swc = api.path().join("node_modules/@swc/core-linux-x64-gnu/swc");
+    assert_eq!(detect_unknown(&swc, api.path()), Some("Express"));
+    let only_go = TempDir::new().expect("temp dir");
+    write_file(
+        only_go.path(),
+        "go.mod",
+        "module example.com/tool
+",
+    );
+    let esbuild = only_go
+        .path()
+        .join("node_modules/@esbuild/linux-x64/bin/esbuild");
+    assert_eq!(detect_unknown(&esbuild, only_go.path()), Some("Go"));
+}
+
+#[test]
 fn cargo_workspace_member_binaries_get_the_rust_label() {
     let workspace = TempDir::new().expect("temp dir");
     write_file(

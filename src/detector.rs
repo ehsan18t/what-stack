@@ -56,7 +56,9 @@ use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 /// [`crate::detect_from_config`], except that when its executable lies inside
 /// the project root, Rust, Go, .NET, and JVM config are tried first: a binary
 /// at `tmp/main` in a repo with `go.mod`, `package.json`, and `vite.config.js`
-/// is `Go`, not `Vite`.
+/// is `Go`, not `Vite`. An executable under the project's `node_modules`
+/// (`node_modules/@esbuild/linux-x64/bin/esbuild`) is a Node build tool, so
+/// Node config is tried first instead and the same repo gives `Vite`.
 ///
 /// # Examples
 ///
@@ -246,7 +248,11 @@ impl StackDetector {
 
         let exe_path = exe_path?;
         if path_starts_with(exe_path, project_root) {
-            Some(ConfigScope::CompiledFirst)
+            if is_in_node_modules(exe_path, project_root) {
+                Some(ConfigScope::NodeFirst)
+            } else {
+                Some(ConfigScope::CompiledFirst)
+            }
         } else if is_go_build_binary(exe_path) {
             Some(ConfigScope::Ecosystem(Ecosystem::Go))
         } else if self.is_cargo_workspace_binary(exe_path, project_root) {
@@ -266,6 +272,16 @@ impl StackDetector {
                     && config::declares_cargo_workspace(workspace)
             })
     }
+}
+
+/// Whether `exe_path`, which lies inside `project_root`, is under a
+/// `node_modules` directory of the project, as the native binaries of esbuild,
+/// turbo, Biome, and SWC are.
+fn is_in_node_modules(exe_path: &Path, project_root: &Path) -> bool {
+    exe_path
+        .components()
+        .skip(project_root.components().count())
+        .any(|component| component.as_os_str().eq_ignore_ascii_case("node_modules"))
 }
 
 /// Whether `exe_path` was built by `go run` or `go test`, which place the

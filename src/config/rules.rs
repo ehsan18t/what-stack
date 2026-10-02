@@ -201,6 +201,11 @@ pub enum ConfigScope {
     /// rules of compiled ecosystems (see [`E::is_compiled`]) are tried first,
     /// then every rule in the usual order.
     CompiledFirst,
+    /// Unknown process whose executable lies in the project's `node_modules`,
+    /// such as the native binary of esbuild, turbo, Biome, or SWC: a Node
+    /// build tool, so Node rules are tried first, then every rule in the usual
+    /// order.
+    NodeFirst,
     /// A process of a known ecosystem, either from its name or because its
     /// executable was built by that ecosystem's tools: only the rules the
     /// ecosystem accepts (see [`E::accepts_config`]). A Python process gets
@@ -215,6 +220,8 @@ pub fn detect_for_scope(project_root: &Path, scope: ConfigScope) -> Option<Stack
     match scope {
         ConfigScope::All => detect_with(project_root, &files, |_| true, false),
         ConfigScope::CompiledFirst => detect_with(project_root, &files, E::is_compiled, false)
+            .or_else(|| detect_with(project_root, &files, |_| true, false)),
+        ConfigScope::NodeFirst => detect_with(project_root, &files, |rule| rule == E::Node, false)
             .or_else(|| detect_with(project_root, &files, |_| true, false)),
         ConfigScope::Ecosystem(process) => detect_with(
             project_root,
