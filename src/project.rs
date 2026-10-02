@@ -14,6 +14,7 @@ use std::ffi::CStr;
 use std::os::unix::ffi::OsStrExt;
 
 use crate::ProjectInput;
+use crate::text::file_extension;
 
 const PROJECT_MARKERS: &[&str] = &[
     "package.json",
@@ -158,9 +159,7 @@ pub fn has_marker(dir: &Path) -> bool {
         };
 
         PROJECT_MARKERS.contains(&name)
-            || Path::new(name)
-                .extension()
-                .and_then(OsStr::to_str)
+            || file_extension(name)
                 .is_some_and(|extension| PROJECT_MARKER_EXTENSIONS.contains(&extension))
     })
 }

@@ -3,6 +3,7 @@
 //! This module handles only image-string parsing and label matching. It does
 //! not talk to a container daemon or validate that an image exists.
 
+use crate::text::strip_prefix_ignore_ascii_case;
 use crate::{StackLabel, labels};
 
 pub const EXACT_IMAGE_RULES: &[(&str, StackLabel)] = &[
@@ -145,7 +146,7 @@ fn image_has_dotnet_namespace(image: &str) -> bool {
 const NAME_SEPARATORS: [char; 3] = ['-', '_', '.'];
 
 fn matches_service_prefix(base: &str, prefix: &str) -> bool {
-    let Some(rest) = strip_prefix_ascii_case(base, prefix) else {
+    let Some(rest) = strip_prefix_ignore_ascii_case(base, prefix) else {
         return false;
     };
 
@@ -160,11 +161,4 @@ fn matches_service_prefix(base: &str, prefix: &str) -> bool {
                 .any(|companion| segment.eq_ignore_ascii_case(companion))
         })
     })
-}
-
-fn strip_prefix_ascii_case<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
-    value
-        .get(..prefix.len())
-        .filter(|head| head.eq_ignore_ascii_case(prefix))
-        .and_then(|_| value.get(prefix.len()..))
 }

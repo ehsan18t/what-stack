@@ -84,6 +84,7 @@ mod image;
 mod labels;
 mod process;
 mod project;
+mod text;
 mod types;
 
 pub use config::detect_from_config;

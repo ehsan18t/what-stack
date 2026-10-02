@@ -91,9 +91,7 @@ Setters accept either a value or an `Option`, so `.exe_path(path)` and `.exe_pat
 3. Project config, when the process label is a runtime or tool (`Node.js`, `Vite`), or when the process is unknown but its executable is inside the project.
 4. Process name (runtime or tool).
 
-So `node` in a Next.js folder is `Next.js`, while `redis-server` started from the same folder stays `Redis`. Config labels follow the process's language ecosystem: `php` in a Laravel project with `vite.config.js` is `Laravel` while `node` there is `Vite`, `node` next to `deno.json` stays `Node.js`, and `gunicorn` in a Python project with no recognized framework stays `Gunicorn`. There is no well-known-port fallback.
-
-Config detection also follows the process ecosystem: a known runtime or tool accepts only config labels from its own ecosystem. In a Laravel project with `vite.config.js`, `php` is `Laravel` while `node` is `Vite`; `python` in a Next.js folder stays `Python`. An unknown process, and `detect_from_config`, use every rule in a fixed order.
+So `node` in a Next.js folder is `Next.js`, while `redis-server` started from the same folder stays `Redis`. Config labels follow the process's language ecosystem: `php` in a Laravel project with `vite.config.js` is `Laravel` while `node` there is `Vite`, `node` next to `deno.json` stays `Node.js`, and `gunicorn` in a Python project with no recognized framework stays `Gunicorn`. An unknown process, and `detect_from_config`, use every rule in a fixed order. There is no well-known-port fallback.
 
 ## Development
 

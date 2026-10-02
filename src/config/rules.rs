@@ -64,8 +64,6 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
     (Extension("fsproj"), labels::DOTNET_FSHARP, E::DotNet),
 ];
 
-const COMMON_CONFIG_SUFFIXES: &[&str] = &["", ".js", ".cjs", ".mjs", ".ts", ".cts", ".mts"];
-
 /// Detect a stack label from configuration files in a project root.
 ///
 /// The function scans only `project_root` and checks built-in rules in a fixed
@@ -106,14 +104,10 @@ pub fn detect_from_config(project_root: &Path) -> Option<StackLabel> {
 
 /// Config detection for a process of a known ecosystem.
 ///
-/// `None` means the process is unknown: every rule applies in priority order,
-/// and Python entry files alone do not make a Python project when
-/// `package.json` is present. `Some(ecosystem)` limits detection to that
-/// ecosystem's rules (a `deno` process also accepts Node rules), so a `php` process in a Laravel project with
-/// `vite.config.js` is `Laravel` and a `node` process next to a stray
-/// `server.py` is not `Python`. A Python process gets only framework labels:
-/// the generic `Python` fallback adds nothing to it, and would replace a more
-/// specific `Gunicorn` or `Uvicorn` label.
+/// `None` means the process is unknown: every rule applies in the order of
+/// [`detect_from_config`]. `Some(ecosystem)` limits detection to the rules
+/// that ecosystem accepts (see [`E::accepts_config`]); a Python process gets
+/// only framework labels (see [`python::detect_python_project`]).
 pub fn detect_for_ecosystem(project_root: &Path, scope: Option<E>) -> Option<StackLabel> {
     let files = ProjectFiles::read(project_root)?;
     let in_scope = |ecosystem: E| scope.is_none_or(|scope| scope.accepts_config(ecosystem));
@@ -150,9 +144,4 @@ fn rule_matches(project_root: &Path, files: &ProjectFiles, matcher: ConfigMatch)
             .all(|path| files.contains_path(project_root, path)),
         Extension(extension) => files.contains_extension(extension),
     }
-}
-
-pub(super) fn matches_config_name_prefix(name: &str, pattern: &str) -> bool {
-    name.strip_prefix(pattern)
-        .is_some_and(|suffix| COMMON_CONFIG_SUFFIXES.contains(&suffix))
 }

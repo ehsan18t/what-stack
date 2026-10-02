@@ -1,8 +1,9 @@
 use std::collections::HashSet;
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
+
+use crate::text::file_extension;
 
 #[derive(Debug)]
 pub(super) struct ProjectFiles {
@@ -27,7 +28,7 @@ impl ProjectFiles {
     pub(super) fn contains_prefix(&self, prefix: &str) -> bool {
         self.names
             .iter()
-            .any(|name| super::rules::matches_config_name_prefix(name, prefix))
+            .any(|name| matches_config_name_prefix(name, prefix))
     }
 
     pub(super) fn any_exact(&self, targets: &[&str]) -> bool {
@@ -35,12 +36,9 @@ impl ProjectFiles {
     }
 
     pub(super) fn contains_extension(&self, target_extension: &str) -> bool {
-        self.names.iter().any(|name| {
-            Path::new(name)
-                .extension()
-                .and_then(OsStr::to_str)
-                .is_some_and(|extension| extension == target_extension)
-        })
+        self.names
+            .iter()
+            .any(|name| file_extension(name) == Some(target_extension))
     }
 
     /// Whether `relative` exists in the project root.
@@ -68,6 +66,15 @@ impl ProjectFiles {
 
         read_regular_file_prefix(&project_root.join(file_name)).map(decode_text)
     }
+}
+
+/// Suffixes accepted after a config name prefix: `next.config` matches
+/// `next.config`, `next.config.js`, `next.config.mjs`, and so on.
+const COMMON_CONFIG_SUFFIXES: &[&str] = &["", ".js", ".cjs", ".mjs", ".ts", ".cts", ".mts"];
+
+fn matches_config_name_prefix(name: &str, pattern: &str) -> bool {
+    name.strip_prefix(pattern)
+        .is_some_and(|suffix| COMMON_CONFIG_SUFFIXES.contains(&suffix))
 }
 
 /// Maximum number of bytes read from one project file.

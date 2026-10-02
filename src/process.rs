@@ -7,6 +7,7 @@
 //! `gunicorn: maste`).
 
 use crate::ecosystem::Ecosystem as E;
+use crate::text::strip_suffix_ignore_ascii_case;
 use crate::{StackKind, StackLabel, labels};
 
 /// One process rule: every executable name of one label, the label, and the
@@ -184,14 +185,5 @@ fn find_versioned_runtime(name: &str) -> Option<&'static ProcessRule> {
 }
 
 fn strip_windows_exe_suffix(process_name: &str) -> &str {
-    let Some(prefix_len) = process_name.len().checked_sub(4) else {
-        return process_name;
-    };
-
-    match process_name.get(prefix_len..) {
-        Some(suffix) if suffix.eq_ignore_ascii_case(".exe") => {
-            process_name.get(..prefix_len).unwrap_or(process_name)
-        }
-        _ => process_name,
-    }
+    strip_suffix_ignore_ascii_case(process_name, ".exe").unwrap_or(process_name)
 }
