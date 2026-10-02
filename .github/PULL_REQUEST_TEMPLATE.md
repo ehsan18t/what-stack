@@ -16,11 +16,9 @@
 
 ## Quality Checklist
 
-- [ ] `cargo fmt --check` passes
-- [ ] `cargo clippy --all-targets` passes
-- [ ] `cargo test` passes
-- [ ] `cargo doc --no-deps` builds without warnings
+- [ ] The quality gates in `docs/CONTRIBUTING.md` (section "Quality Gates") pass
 - [ ] Documentation updated if behavior changed
+- [ ] `CHANGELOG.md` updated under `[Unreleased]` if the change is user-visible
 - [ ] Commits follow Conventional Commits
 
 ## Screenshots / Terminal Output
