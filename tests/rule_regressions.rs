@@ -407,6 +407,13 @@ fn node_frameworks_from_package_dependencies() {
             )][..],
             "Node.js",
         ),
+        (
+            &[(
+                "package.json",
+                r#"{"pnpm": {"packageExtensions": {"x@1": {"dependencies": {"next": "15", "express": "4"}}}}, "dependencies": {"react": "19"}}"#,
+            )][..],
+            "Node.js",
+        ),
     ] {
         let dir = project(files);
         assert_eq!(node_label(dir.path()), Some(expected), "{files:?}");
