@@ -11,7 +11,7 @@ use crate::config;
 use crate::ecosystem::Ecosystem;
 use crate::image::detect_from_image;
 use crate::process::find_process_rule_by_names;
-use crate::project::{has_marker, path_starts_with, project_root_candidates, walk_ancestors};
+use crate::project::{Walk, has_marker, path_starts_with, project_root_candidates};
 use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 
 /// Cache-owning detector for repeated stack and project lookups.
@@ -121,7 +121,9 @@ impl StackDetector {
     /// Uses the same fallback order as [`crate::resolve_project_root`] with the
     /// detector's home ceiling. Results are cached by visited directory.
     /// Positive hits cache the visited directories from the start up to the
-    /// discovered root; negative walks cache the visited directories as misses.
+    /// discovered root; negative walks cache the visited directories as misses,
+    /// except when the walk stopped at [`crate::MAX_WALK_DEPTH`], because a
+    /// walk from a shallower visited directory can reach further up.
     /// This mirrors the process-enrichment hot path where many entries share a
     /// working directory or project ancestor.
     ///
@@ -170,7 +172,9 @@ impl StackDetector {
 
     fn cached_project_root(&mut self, start: &Path) -> Option<PathBuf> {
         let mut visited = Vec::new();
-        let result = walk_ancestors(start, self.home.as_deref())
+        let mut walk = Walk::new(start, self.home.as_deref());
+        let result = walk
+            .by_ref()
             .find_map(|dir| {
                 if let Some(cached) = self.project_cache.get(dir) {
                     return Some(cached.clone());
@@ -179,6 +183,12 @@ impl StackDetector {
                 has_marker(dir).then(|| Some(dir.to_path_buf()))
             })
             .flatten();
+
+        // A miss caused by the depth cap is only a miss for the deepest start:
+        // a walk from a shallower visited directory can reach further up.
+        if result.is_none() && walk.hit_depth_cap() {
+            return None;
+        }
 
         for path in visited {
             self.project_cache

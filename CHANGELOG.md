@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `find_project_root` and the other project walks test the current directory for a relative single-name start: `find_project_root("src")` with `Cargo.toml` in the working directory returns `.` instead of `None`.
+- `StackDetector::detect_project_root` no longer caches misses from a walk that stopped at `MAX_WALK_DEPTH`. Such a miss was reused for shallower directories on the same path, which returned `None` even when their own walk would reach the project root.
 
 ## [0.1.0] - 2026-10-01
 

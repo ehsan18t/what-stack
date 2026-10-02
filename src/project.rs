@@ -106,7 +106,7 @@ pub fn project_root_candidates(input: ProjectInput<'_>) -> impl Iterator<Item = 
 /// ```
 #[must_use]
 pub fn find_project_root(start: &Path, home: Option<&Path>) -> Option<PathBuf> {
-    walk_ancestors(start, home)
+    Walk::new(start, home)
         .find(|dir| has_marker(dir))
         .map(Path::to_path_buf)
 }
@@ -129,29 +129,81 @@ pub fn project_name(root: &Path) -> Option<Cow<'_, str>> {
     root.file_name().map(OsStr::to_string_lossy)
 }
 
-/// Directories tested by one upward walk from `start`, nearest first.
+/// Upward walk over the directories tested for project markers, nearest
+/// first.
 ///
-/// The walk stops before `home` and after [`MAX_WALK_DEPTH`] directories. The
-/// walk is lexical, so the parent of a relative single-name start such as
-/// `src` is the empty path; it stands for the current directory and is tested
-/// as `.`.
-pub fn walk_ancestors<'a>(
-    start: &'a Path,
+/// The walk stops before `home` and after [`MAX_WALK_DEPTH`] directories. It
+/// is lexical, so the parent of a relative single-name start such as `src` is
+/// the empty path; that stands for the current directory and is tested as `.`.
+///
+/// After the walk returns `None`, [`hit_depth_cap`](Self::hit_depth_cap) tells
+/// whether it ended because of the depth cap while untested ancestors
+/// remained, rather than at the file system root or the home ceiling.
+#[derive(Debug)]
+pub struct Walk<'a> {
+    ancestors: Option<std::path::Ancestors<'a>>,
     home: Option<&'a Path>,
-) -> impl Iterator<Item = &'a Path> + 'a {
-    let empty_means_current = matches!(start.components().next(), Some(Component::Normal(_)));
+    empty_means_current: bool,
+    remaining: usize,
+    hit_depth_cap: bool,
+}
 
-    start
-        .ancestors()
-        .filter_map(move |dir| {
-            if dir.as_os_str().is_empty() {
-                empty_means_current.then_some(Path::new("."))
-            } else {
-                Some(dir)
+impl<'a> Walk<'a> {
+    pub fn new(start: &'a Path, home: Option<&'a Path>) -> Self {
+        Self {
+            ancestors: Some(start.ancestors()),
+            home,
+            empty_means_current: matches!(start.components().next(), Some(Component::Normal(_))),
+            remaining: MAX_WALK_DEPTH,
+            hit_depth_cap: false,
+        }
+    }
+
+    /// Whether the walk stopped at [`MAX_WALK_DEPTH`] with ancestors left to
+    /// test. A walk that stopped there is not a complete answer for the
+    /// directories it visited: a walk starting at one of them could reach
+    /// further up.
+    pub const fn hit_depth_cap(&self) -> bool {
+        self.hit_depth_cap
+    }
+
+    fn next_ancestor(&mut self) -> Option<&'a Path> {
+        let ancestors = self.ancestors.as_mut()?;
+        let dir = ancestors.next()?;
+
+        if !dir.as_os_str().is_empty() {
+            Some(dir)
+        } else if self.empty_means_current {
+            Some(Path::new("."))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> Iterator for Walk<'a> {
+    type Item = &'a Path;
+
+    fn next(&mut self) -> Option<&'a Path> {
+        let dir = self.next_ancestor();
+        let stop = match dir {
+            None => true,
+            Some(dir) if self.home.is_some_and(|home| paths_equal(dir, home)) => true,
+            Some(_) if self.remaining == 0 => {
+                self.hit_depth_cap = true;
+                true
             }
-        })
-        .take(MAX_WALK_DEPTH)
-        .take_while(move |dir| home.is_none_or(|home| !paths_equal(dir, home)))
+            Some(_) => false,
+        };
+
+        if stop {
+            self.ancestors = None;
+            return None;
+        }
+
+        self.remaining -= 1;
+        dir
+    }
 }
 
 fn absolute_cmd_parents(cmd: &[OsString]) -> impl Iterator<Item = &Path> + '_ {
@@ -439,7 +491,7 @@ mod tests {
     }
 
     fn walk(start: &str) -> Vec<&Path> {
-        walk_ancestors(Path::new(start), None).collect()
+        Walk::new(Path::new(start), None).collect()
     }
 
     #[test]
@@ -463,5 +515,28 @@ mod tests {
             find_project_root(Path::new("src"), None).as_deref(),
             Some(Path::new("."))
         );
+    }
+
+    #[test]
+    fn walk_reports_whether_the_depth_cap_ended_it() {
+        let deep: PathBuf = (0..=MAX_WALK_DEPTH)
+            .map(|index| format!("d{index}"))
+            .collect();
+        let mut capped = Walk::new(&deep, None);
+        assert_eq!(capped.by_ref().count(), MAX_WALK_DEPTH);
+        assert!(capped.hit_depth_cap());
+        assert_eq!(capped.next(), None, "a finished walk stays finished");
+
+        let exact: PathBuf = (1..MAX_WALK_DEPTH)
+            .map(|index| format!("d{index}"))
+            .collect();
+        let mut complete = Walk::new(&exact, None);
+        assert_eq!(complete.by_ref().count(), MAX_WALK_DEPTH, "the last is `.`");
+        assert!(!complete.hit_depth_cap());
+
+        let home = Path::new("/home/dev");
+        let mut stopped = Walk::new(Path::new("/home/dev/app/src"), Some(home));
+        assert_eq!(stopped.by_ref().count(), 2);
+        assert!(!stopped.hit_depth_cap());
     }
 }
