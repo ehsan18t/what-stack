@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - `find_project_root` and the other project walks test the current directory for a relative single-name start: `find_project_root("src")` with `Cargo.toml` in the working directory returns `.` instead of `None`.
+- The executable-parent fallback of `resolve_project_root` and `StackDetector::detect_project_root` is skipped for known runtimes and tools, and a root it finds inside a dot directory directly under the home ceiling is rejected. An nvm `node` at `~/.nvm/versions/node/v20/bin/node` next to `~/.nvm/package.json` no longer makes `~/.nvm` the project root.
 - `StackDetector::detect_project_root` no longer caches misses from a walk that stopped at `MAX_WALK_DEPTH`. Such a miss was reused for shallower directories on the same path, which returned `None` even when their own walk would reach the project root.
 
 ## [0.1.0] - 2026-10-01

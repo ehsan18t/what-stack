@@ -13,8 +13,9 @@ use std::ffi::CStr;
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 
-use crate::ProjectInput;
+use crate::process::find_process_rule_by_names;
 use crate::text::file_extension;
+use crate::{ProjectInput, StackKind};
 
 const PROJECT_MARKERS: &[&str] = &[
     "package.json",
@@ -52,13 +53,17 @@ pub const MAX_WALK_DEPTH: usize = 64;
 ///
 /// 1. Walk upward from the working directory set by [`ProjectInput::cwd`].
 /// 2. Walk upward from the parent directory of the executable set by
-///    [`ProjectInput::exe`].
+///    [`ProjectInput::exe`], unless the executable is a known runtime or tool
+///    such as `node`, `python`, or `cargo`.
 /// 3. Walk upward from the parent directory of each absolute path in the
 ///    arguments set by [`ProjectInput::cmd`].
 ///
-/// The first marker hit wins. Relative command-line paths are ignored because
-/// they are ambiguous without a reliable process working directory. `home` is
-/// the same optional ceiling as in [`find_project_root`].
+/// The first accepted marker hit wins. Relative command-line paths are ignored
+/// because they are ambiguous without a reliable process working directory.
+/// `home` is the same optional ceiling as in [`find_project_root`]. A root
+/// found from the executable path is rejected when it lies inside a dot
+/// directory directly under `home` (`~/.nvm`, `~/.cargo`, `~/.local`): those
+/// hold installed toolchains and packages, not the process's project.
 ///
 /// Use [`StackDetector::detect_project_root`](crate::StackDetector::detect_project_root)
 /// for repeated lookups; it applies the same order with caching and its own
@@ -73,16 +78,54 @@ pub const MAX_WALK_DEPTH: usize = 64;
 /// ```
 #[must_use]
 pub fn resolve_project_root(input: ProjectInput<'_>, home: Option<&Path>) -> Option<PathBuf> {
-    project_root_candidates(input).find_map(|start| find_project_root(start, home))
+    project_root_candidates(input).find_map(|(start, from_exe)| {
+        find_project_root(start, home).filter(|root| accepts_root(root, from_exe, home))
+    })
 }
 
-/// Starting directories for a project walk, in fallback order.
-pub fn project_root_candidates(input: ProjectInput<'_>) -> impl Iterator<Item = &Path> + '_ {
+/// Starting directories for a project walk, in fallback order, each with
+/// whether it came from the executable path.
+pub fn project_root_candidates(
+    input: ProjectInput<'_>,
+) -> impl Iterator<Item = (&Path, bool)> + '_ {
     input
         .cwd
         .into_iter()
-        .chain(input.exe.and_then(Path::parent))
-        .chain(absolute_cmd_parents(input.cmd))
+        .map(|cwd| (cwd, false))
+        .chain(exe_walk_start(input.exe).map(|start| (start, true)))
+        .chain(absolute_cmd_parents(input.cmd).map(|start| (start, false)))
+}
+
+/// The executable parent to walk from, or `None` when the executable is a
+/// known runtime or tool. An installed `node` or `python` says nothing about
+/// the project it runs, and walking up from its directory finds the install
+/// tree instead (`~/.nvm/versions/node/v20/bin/node`).
+fn exe_walk_start(exe: Option<&Path>) -> Option<&Path> {
+    let exe = exe?;
+    let known_host = exe
+        .file_name()
+        .and_then(OsStr::to_str)
+        .and_then(|name| find_process_rule_by_names(name, None))
+        .is_some_and(|(_, label, _)| matches!(label.kind(), StackKind::Runtime | StackKind::Tool));
+
+    if known_host { None } else { exe.parent() }
+}
+
+/// Whether a root found from a walk start may be used. Roots found from the
+/// executable path must not lie inside a dot directory directly under `home`.
+pub fn accepts_root(root: &Path, from_exe: bool, home: Option<&Path>) -> bool {
+    !from_exe || home.is_none_or(|home| !is_inside_home_dot_dir(root, home))
+}
+
+/// Whether `path` is at or below `home/.name` for some dot directory `.name`.
+fn is_inside_home_dot_dir(path: &Path, home: &Path) -> bool {
+    path_starts_with(path, home)
+        && path
+            .components()
+            .nth(home.components().count())
+            .is_some_and(|component| {
+                matches!(component, Component::Normal(name) if name.as_encoded_bytes().starts_with(b"."))
+            })
 }
 
 /// Walk upward from `start` looking for project marker files.

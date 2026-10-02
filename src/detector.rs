@@ -11,7 +11,7 @@ use crate::config;
 use crate::ecosystem::Ecosystem;
 use crate::image::detect_from_image;
 use crate::process::find_process_rule_by_names;
-use crate::project::{Walk, has_marker, path_starts_with, project_root_candidates};
+use crate::project::{Walk, accepts_root, has_marker, path_starts_with, project_root_candidates};
 use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 
 /// Cache-owning detector for repeated stack and project lookups.
@@ -139,7 +139,10 @@ impl StackDetector {
     /// ```
     #[must_use]
     pub fn detect_project_root(&mut self, input: ProjectInput<'_>) -> Option<PathBuf> {
-        project_root_candidates(input).find_map(|start| self.cached_project_root(start))
+        project_root_candidates(input).find_map(|(start, from_exe)| {
+            let root = self.cached_project_root(start)?;
+            accepts_root(&root, from_exe, self.home.as_deref()).then_some(root)
+        })
     }
 
     /// Detect a stack label from image, process, and project metadata.

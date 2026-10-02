@@ -166,7 +166,8 @@ impl From<StackLabel> for String {
 /// resolution is best-effort and uses a stable fallback order:
 ///
 /// 1. [`cwd`](Self::cwd)
-/// 2. parent of [`exe`](Self::exe)
+/// 2. parent of [`exe`](Self::exe), for executables that are not known
+///    runtimes or tools
 /// 3. parents of absolute paths in [`cmd`](Self::cmd)
 ///
 /// Relative command-line arguments are ignored because they cannot be resolved
@@ -220,7 +221,10 @@ impl<'a> ProjectInput<'a> {
     /// Set the process executable path.
     ///
     /// The parent directory is searched when the working directory is missing
-    /// or does not resolve to a project. Accepts a `&Path` or an
+    /// or does not resolve to a project, unless the executable is a known
+    /// runtime or tool such as `node` or `python`. A root found this way is
+    /// ignored when it lies in a dot directory directly under the home
+    /// ceiling, such as `~/.nvm` or `~/.cargo`. Accepts a `&Path` or an
     /// `Option<&Path>`.
     #[must_use]
     pub fn exe(mut self, exe: impl Into<Option<&'a Path>>) -> Self {
