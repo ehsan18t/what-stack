@@ -1,17 +1,43 @@
+# what-stack - Git attributes
+#
+# Text is stored with LF. Windows-native scripts (.bat, .cmd, .ps1) check out
+# with CRLF; everything else, including the POSIX git hooks, checks out with LF.
+
 * text=auto eol=lf
+
+# Source and manifests
 *.rs        text eol=lf
 *.toml      text eol=lf
 *.lock      text eol=lf
+
+# Documentation and config
 *.md        text eol=lf
 *.yml       text eol=lf
 *.yaml      text eol=lf
+*.txt       text eol=lf
+*.proptest-regressions text eol=lf
+LICENSE         text eol=lf
+.editorconfig   text eol=lf
+.gitignore      text eol=lf
+.gitattributes  text eol=lf
+
+# Windows-native scripts
 *.bat       text eol=crlf
 *.cmd       text eol=crlf
 *.ps1       text eol=crlf
-*.sh        text eol=lf
+
+# POSIX shell scripts and git hooks
+*.sh              text eol=lf
 hooks/commit-msg  text eol=lf
 hooks/pre-commit  text eol=lf
 hooks/pre-push    text eol=lf
+
+# Binary assets
 *.ico       binary
 *.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
 *.exe       binary
+*.dll       binary
+*.pdb       binary
