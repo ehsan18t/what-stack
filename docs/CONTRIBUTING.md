@@ -55,6 +55,7 @@ Run `cargo package --list` to see exactly which files are published. Only `src/`
 | -------- | -------------- |
 | `src/**` `#[cfg(test)]` modules | Private helpers: path comparison, home lookup, text decoding, caches |
 | `tests/stack_detection.rs` | Public API behavior, one rule or guard per test |
+| `tests/rule_regressions.rs` | Regressions for project-walk and rule fixes made after 0.1.0, including negative variants of each fix |
 | `tests/corpus.rs` | Realistic project trees run through root resolution and stack detection, one test per fixture |
 | `tests/proptest_detection.rs` | Property tests: no panics on arbitrary input, case and suffix invariance, a model of the project walk |
 
