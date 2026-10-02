@@ -401,3 +401,36 @@ fn node_dependency_rules_stay_in_the_node_ecosystem() {
     );
     assert_eq!(config_text(dir.path()), Some("Express"));
 }
+
+#[test]
+fn symfony_projects_are_recognized_from_flex_lock_or_console() {
+    let mut detector = StackDetector::with_home(None);
+    for files in [
+        &[("composer.json", "{}"), ("symfony.lock", "{}")][..],
+        &[
+            ("composer.json", "{}"),
+            ("bin/console", "#!/usr/bin/env php\n"),
+        ][..],
+    ] {
+        let dir = project(files);
+        assert_eq!(config_text(dir.path()), Some("Symfony"), "{files:?}");
+        assert_eq!(
+            text(detector.detect_stack(StackInput::new("php-fpm").project_root(dir.path()))),
+            Some("Symfony")
+        );
+    }
+
+    let laravel = project(&[
+        ("composer.json", "{}"),
+        ("artisan", ""),
+        ("symfony.lock", "{}"),
+    ]);
+    assert_eq!(config_text(laravel.path()), Some("Laravel"));
+
+    let console_dir = project(&[("composer.json", "{}"), ("bin/console/readme", "")]);
+    assert_eq!(
+        config_text(console_dir.path()),
+        Some("PHP"),
+        "bin/console must be a file"
+    );
+}

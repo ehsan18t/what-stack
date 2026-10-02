@@ -60,6 +60,16 @@ pub const CONFIG_RULES: &[ConfigRule] = &[
         labels::LARAVEL,
         E::Php,
     ),
+    (
+        AllOf(&["composer.json", "symfony.lock"]),
+        labels::SYMFONY,
+        E::Php,
+    ),
+    (
+        AllOf(&["composer.json", "bin/console"]),
+        labels::SYMFONY,
+        E::Php,
+    ),
     (Exact("composer.json"), labels::PHP, E::Php),
     (Exact("mix.exs"), labels::ELIXIR, E::Beam),
     (Exact("deno.json"), labels::DENO, E::Deno),
@@ -103,7 +113,7 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
 /// `Starlette`, and `Litestar` from entry files or dependency files. Ruby
 /// projects need `Gemfile` and `config.ru` (`Ruby (Rack)`), plus `bin/rails`
 /// for `Rails`. PHP projects with `artisan` next to `composer.json` are
-/// `Laravel`.
+/// `Laravel`, and those with `symfony.lock` or `bin/console` are `Symfony`.
 ///
 /// This function knows nothing about the process, so it uses the same rules
 /// [`StackDetector`](crate::StackDetector) applies to an unknown process.
