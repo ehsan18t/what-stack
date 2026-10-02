@@ -18,6 +18,8 @@ include = ["src/**", "LICENSE", "README.md", "CHANGELOG.md"]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+unwrap_used = "deny"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
