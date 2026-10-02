@@ -285,14 +285,15 @@ fn is_in_node_modules(exe_path: &Path, project_root: &Path) -> bool {
 }
 
 /// Whether `exe_path` was built by `go run` or `go test`, which place the
-/// binary under a temporary `go-build<digits>` directory.
+/// binary under a temporary `go-build<digits>` directory. At least one digit
+/// is required, so a directory named plain `go-build` does not count.
 fn is_go_build_binary(exe_path: &Path) -> bool {
     exe_path.components().any(|component| {
         component
             .as_os_str()
             .to_str()
             .and_then(|name| name.strip_prefix("go-build"))
-            .is_some_and(|rest| rest.bytes().all(|byte| byte.is_ascii_digit()))
+            .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|byte| byte.is_ascii_digit()))
     })
 }
 

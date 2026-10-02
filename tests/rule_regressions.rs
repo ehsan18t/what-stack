@@ -102,6 +102,11 @@ fn go_run_binaries_get_the_go_label_from_the_project() {
 
     let unrelated = temp.path().join("go-builder/b001/exe/main");
     assert_eq!(detect_unknown(&unrelated, project.path()), None);
+
+    // A checked-in or CI directory named plain `go-build` is not a `go run`
+    // build directory.
+    let no_digits = temp.path().join("go-build/b001/exe/main");
+    assert_eq!(detect_unknown(&no_digits, project.path()), None);
 }
 
 #[test]
