@@ -346,7 +346,11 @@ mod tests {
 
     #[test]
     fn project_root_cache_does_not_poison_unrelated_ancestors() {
-        let workspace = TempDir::new().expect("temp dir");
+        // The fixture lives in a fake home that is also the walk ceiling, so a
+        // marker file above the system temp directory (on Windows `%TEMP%` is
+        // under the user profile) cannot turn the expected miss into a hit.
+        let home = TempDir::new().expect("fake home");
+        let workspace = TempDir::new_in(home.path()).expect("temp dir");
         let outer = workspace.path().join("workspace");
         let project_root = outer.join("app");
         let inside = project_root.join("src").join("db");
@@ -356,7 +360,7 @@ mod tests {
         fs::create_dir_all(&unrelated).expect("create unrelated dir");
         write_marker(&project_root, "Cargo.toml");
 
-        let mut detector = StackDetector::new();
+        let mut detector = StackDetector::with_home(Some(home.path().to_path_buf()));
 
         let first_result = detector.detect_project_root(ProjectInput::new().cwd(inside.as_path()));
         assert_eq!(first_result.as_deref(), Some(project_root.as_path()));

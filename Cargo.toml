@@ -18,6 +18,8 @@ include = ["src/**", "LICENSE", "README.md", "CHANGELOG.md"]
 all = { level = "deny", priority = -1 }
 pedantic = { level = "deny", priority = -1 }
 nursery = { level = "deny", priority = -1 }
+undocumented_unsafe_blocks = "deny"
+unwrap_used = "deny"
 
 [lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
@@ -30,11 +32,12 @@ bare_urls = "deny"
 broken_intra_doc_links = "deny"
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2.186"
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3.27.0"
 gungraun = "0.18.2"
+proptest = { version = "1.11.0", default-features = false, features = ["std"] }
 
 [profile.bench]
 debug = true

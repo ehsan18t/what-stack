@@ -94,35 +94,9 @@ Setters accept either a value or an `Option`, so `.exe_path(path)` and `.exe_pat
 
 So `node` in a Next.js folder is `Next.js`, while `redis-server` started from the same folder stays `Redis`. Config labels follow the process's language ecosystem: `php` in a Laravel project with `vite.config.js` is `Laravel` while `node` there is `Vite`, `node` next to `deno.json` stays `Node.js`, and `gunicorn` in a Python project with no recognized framework stays `Gunicorn`. An unknown process, and `detect_from_config`, use every rule in a fixed order, except that an unknown executable inside the project root tries Rust, Go, .NET, and JVM config first: a binary at `tmp/main` in a repo with `go.mod`, `package.json`, and `vite.config.js` is `Go`, not `Vite`. There is no well-known-port fallback.
 
-## Development
+## Minimum Supported Rust Version
 
-Install Rust stable and the supported lint targets:
-
-```bash
-rustup target add x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
-```
-
-Install local hooks:
-
-```powershell
-.\scripts\install-hooks.ps1
-```
-
-```bash
-bash scripts/install-hooks.sh
-```
-
-## Quality Gates
-
-| Gate | Command | Purpose |
-| ---- | ------- | ------- |
-| 1 | `cargo fmt --all -- --check` | Formatting |
-| 2 | `cargo clippy --locked --all-targets -- -D warnings` | Lints |
-| 3 | `cargo test --locked --lib --tests && cargo test --locked --doc` | Tests |
-| 4 | `cargo bench --locked --no-run` | Benchmarks compile |
-| 5 | `cargo build --locked` | Build |
-| 6 | `cargo doc --locked --no-deps` | Documentation |
-| 7 | `cargo deny check` | Dependency audit |
+what-stack requires Rust 1.88 or newer (declared as `rust-version` in `Cargo.toml`). It uses edition 2024 and two features stabilized in 1.88: `let` chains in `if` conditions and `slice::as_chunks`. CI checks every target with Rust 1.88.
 
 ## Benchmarks
 
@@ -134,7 +108,7 @@ cargo bench --bench benchmarks
 
 ## Contributing
 
-See [CONTRIBUTING.md](docs/CONTRIBUTING.md).
+Development setup, the quality gates, the test layout, and commit conventions are in [CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ## License
 

@@ -1,8 +1,11 @@
-# WhatStack - clippy configuration.
+# what-stack - clippy configuration.
 
 too-many-lines-threshold = 100
 cognitive-complexity-threshold = 30
 enum-variant-size-threshold = 200
+
+# `unwrap_used` is denied in Cargo.toml; tests may still unwrap.
+allow-unwrap-in-tests = true
 
 disallowed-macros = [
   { path = "std::dbg", reason = "debug macro left in committed code" },
