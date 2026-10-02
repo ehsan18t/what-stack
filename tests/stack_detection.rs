@@ -314,6 +314,39 @@ fn walk_finds_marker_at_max_depth_boundary() {
 }
 
 #[test]
+#[ignore = "pending fix: a walk stopped by the depth cap must not cache misses"]
+fn depth_capped_walk_does_not_poison_the_cache() {
+    let home = fake_home();
+    let project = temp_in(&home);
+    write_file(project.path(), "package.json", "{}");
+
+    let mut deep = project.path().to_path_buf();
+    let mut within_reach = None;
+    for index in 0..MAX_WALK_DEPTH + 4 {
+        deep = deep.join(format!("d{index}"));
+        if index == 8 {
+            within_reach = Some(deep.clone());
+        }
+    }
+    std::fs::create_dir_all(&deep).expect("create deep dir");
+    let within_reach = within_reach.expect("shallow directory");
+
+    let mut detector = StackDetector::with_home(Some(home.path().to_path_buf()));
+    assert_eq!(
+        detector.detect_project_root(ProjectInput::new().cwd(deep.as_path())),
+        None,
+        "the deep walk stops at the depth cap"
+    );
+    assert_eq!(
+        detector
+            .detect_project_root(ProjectInput::new().cwd(within_reach.as_path()))
+            .as_deref(),
+        Some(project.path()),
+        "a directory within reach of the marker must still find it"
+    );
+}
+
+#[test]
 fn project_detection_accepts_csproj_extension_marker() {
     let project = TempDir::new().expect("temp dir");
     write_file(project.path(), "MyApp.csproj", "");
