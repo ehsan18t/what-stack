@@ -37,7 +37,7 @@
 //!
 //! Config labels are guarded: a project config is used only when the process
 //! is a known runtime or tool, or when the process is unknown but its
-//! executable path belongs to the project root. This keeps a `postgres` or
+//! executable belongs to the project. This keeps a `postgres` or
 //! `nginx` process started from a Next.js folder labeled as itself, and keeps
 //! unrelated helper shells from inheriting a project's framework label just
 //! because their working directory happens to be inside that project.

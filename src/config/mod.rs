@@ -7,4 +7,17 @@ mod files;
 mod python;
 mod rules;
 
-pub use rules::{detect_for_ecosystem, detect_from_config};
+use std::path::Path;
+
+pub use rules::{ConfigScope, detect_for_scope, detect_from_config};
+
+/// Whether `dir/Cargo.toml` declares a Cargo workspace (`[workspace]` or a
+/// `[workspace.*]` table).
+pub fn declares_cargo_workspace(dir: &Path) -> bool {
+    files::read_text_file(&dir.join("Cargo.toml")).is_some_and(|text| {
+        text.lines().map(str::trim_start).any(|line| {
+            line.strip_prefix("[workspace")
+                .is_some_and(|rest| rest.starts_with([']', '.']))
+        })
+    })
+}

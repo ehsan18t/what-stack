@@ -248,8 +248,9 @@ impl<'a> ProjectInput<'a> {
 /// uses image, process, and project config metadata. Config detection is
 /// guarded to avoid false positives: a config label can win only when the
 /// process label is a [`StackKind::Runtime`] or [`StackKind::Tool`], or when the
-/// process is unknown but its executable path lies inside the project root. A
-/// known runtime or tool accepts only config labels from its own ecosystem.
+/// process is unknown but its executable belongs to the project (see
+/// [`StackDetector`](crate::StackDetector)). A known runtime or tool accepts
+/// only config labels from its own ecosystem.
 ///
 /// # Examples
 ///
@@ -324,9 +325,11 @@ impl<'a> StackInput<'a> {
 
     /// Set the full executable path.
     ///
-    /// The path is not read. It is used only to decide whether config detection
-    /// is allowed for an unknown process name. Accepts a `&Path` or an
-    /// `Option<&Path>`.
+    /// The executable is not read. Its path is used only to decide whether
+    /// config detection is allowed for an unknown process name: it is when the
+    /// executable lies inside the project root, in a `go-build*` directory
+    /// from `go run`, or in the `target` directory of an enclosing Cargo
+    /// workspace. Accepts a `&Path` or an `Option<&Path>`.
     #[must_use]
     pub fn exe_path(mut self, exe_path: impl Into<Option<&'a Path>>) -> Self {
         self.exe_path = exe_path.into();

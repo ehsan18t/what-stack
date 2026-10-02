@@ -64,7 +64,7 @@ impl ProjectFiles {
             return None;
         }
 
-        read_regular_file_prefix(&project_root.join(file_name)).map(decode_text)
+        read_text_file(&project_root.join(file_name))
     }
 }
 
@@ -75,6 +75,12 @@ const COMMON_CONFIG_SUFFIXES: &[&str] = &["", ".js", ".cjs", ".mjs", ".ts", ".ct
 fn matches_config_name_prefix(name: &str, pattern: &str) -> bool {
     name.strip_prefix(pattern)
         .is_some_and(|suffix| COMMON_CONFIG_SUFFIXES.contains(&suffix))
+}
+
+/// Read the first [`MAX_SCAN_BYTES`] of a regular file as text, with the same
+/// safety and decoding rules as [`ProjectFiles::read_text`].
+pub(super) fn read_text_file(path: &Path) -> Option<String> {
+    read_regular_file_prefix(path).map(decode_text)
 }
 
 /// Maximum number of bytes read from one project file.

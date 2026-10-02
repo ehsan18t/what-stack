@@ -2,10 +2,22 @@
 
 //! Regression tests for project-walk and rule fixes after 0.1.0.
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
-use what_stack::{MAX_WALK_DEPTH, ProjectInput, StackDetector, resolve_project_root};
+use what_stack::{
+    MAX_WALK_DEPTH, ProjectInput, StackDetector, StackInput, StackLabel, resolve_project_root,
+};
+
+/// Label text for assertions. Built-in labels are static, so this also checks
+/// that detection did not allocate.
+fn text(label: Option<StackLabel>) -> Option<&'static str> {
+    match label?.into_cow() {
+        Cow::Borrowed(text) => Some(text),
+        Cow::Owned(text) => panic!("built-in label {text:?} should be static"),
+    }
+}
 
 fn write_file(root: &Path, relative: &str, contents: &str) {
     let path = root.join(relative);
@@ -99,5 +111,70 @@ fn executable_roots_inside_home_dot_directories_are_rejected() {
     assert_eq!(
         resolve_project_root(from_installed, None).as_deref(),
         Some(home.path().join(".local/share/tool").as_path())
+    );
+}
+
+fn detect_unknown(exe: &Path, project_root: &Path) -> Option<&'static str> {
+    let label = StackDetector::with_home(None).detect_stack(
+        StackInput::new("main")
+            .exe_path(exe)
+            .project_root(project_root),
+    );
+    text(label)
+}
+
+#[test]
+fn go_run_binaries_get_the_go_label_from_the_project() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(project.path(), "go.mod", "module example.com/app\n");
+    write_file(project.path(), "package.json", "{}");
+    write_file(project.path(), "next.config.js", "");
+
+    let temp = TempDir::new().expect("temp dir");
+    let go_run = temp.path().join("go-build2895466181/b001/exe/main");
+    assert_eq!(detect_unknown(&go_run, project.path()), Some("Go"));
+
+    let unrelated = temp.path().join("go-builder/b001/exe/main");
+    assert_eq!(detect_unknown(&unrelated, project.path()), None);
+}
+
+#[test]
+fn cargo_workspace_member_binaries_get_the_rust_label() {
+    let workspace = TempDir::new().expect("temp dir");
+    write_file(
+        workspace.path(),
+        "Cargo.toml",
+        "[workspace]\nmembers = [\"app\"]\n",
+    );
+    write_file(
+        workspace.path(),
+        "app/Cargo.toml",
+        "[package]\nname = \"app\"\n",
+    );
+    let member = workspace.path().join("app");
+    let exe = workspace.path().join("target/debug/app");
+    assert_eq!(detect_unknown(&exe, &member), Some("Rust"));
+
+    let release = workspace.path().join("target/release/app");
+    assert_eq!(detect_unknown(&release, &member), Some("Rust"));
+
+    let elsewhere = workspace.path().join("dist/app");
+    assert_eq!(detect_unknown(&elsewhere, &member), None);
+
+    let not_a_workspace = TempDir::new().expect("temp dir");
+    write_file(
+        not_a_workspace.path(),
+        "Cargo.toml",
+        "[package]\nname = \"outer\"\n",
+    );
+    write_file(
+        not_a_workspace.path(),
+        "app/Cargo.toml",
+        "[package]\nname = \"app\"\n",
+    );
+    let exe = not_a_workspace.path().join("target/debug/app");
+    assert_eq!(
+        detect_unknown(&exe, &not_a_workspace.path().join("app")),
+        None
     );
 }

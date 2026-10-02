@@ -99,27 +99,49 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
 /// dependency files used for Python detection are capped to the first 64 KiB.
 #[must_use]
 pub fn detect_from_config(project_root: &Path) -> Option<StackLabel> {
-    detect_for_ecosystem(project_root, None)
+    detect_for_scope(project_root, ConfigScope::All)
 }
 
-/// Config detection for a process of a known ecosystem.
-///
-/// `None` means the process is unknown: every rule applies in the order of
-/// [`detect_from_config`]. `Some(ecosystem)` limits detection to the rules
-/// that ecosystem accepts (see [`E::accepts_config`]); a Python process gets
-/// only framework labels (see [`python::detect_python_project`]).
-pub fn detect_for_ecosystem(project_root: &Path, scope: Option<E>) -> Option<StackLabel> {
-    let files = ProjectFiles::read(project_root)?;
-    let in_scope = |ecosystem: E| scope.is_none_or(|scope| scope.accepts_config(ecosystem));
-    let python_process = scope == Some(E::Python);
+/// Which config rules apply to a process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfigScope {
+    /// Unknown process: every rule, in the order of [`detect_from_config`].
+    All,
+    /// A process of a known ecosystem, either from its name or because its
+    /// executable was built by that ecosystem's tools: only the rules the
+    /// ecosystem accepts (see [`E::accepts_config`]). A Python process gets
+    /// only framework labels (see [`python::detect_python_project`]).
+    Ecosystem(E),
+}
 
-    detect_from_rules(project_root, &files, CONFIG_RULES, in_scope)
+/// Config detection limited to `scope`.
+pub fn detect_for_scope(project_root: &Path, scope: ConfigScope) -> Option<StackLabel> {
+    let files = ProjectFiles::read(project_root)?;
+
+    match scope {
+        ConfigScope::All => detect_with(project_root, &files, |_| true, false),
+        ConfigScope::Ecosystem(process) => detect_with(
+            project_root,
+            &files,
+            |rule| process.accepts_config(rule),
+            process == E::Python,
+        ),
+    }
+}
+
+fn detect_with(
+    project_root: &Path,
+    files: &ProjectFiles,
+    in_scope: impl Fn(E) -> bool + Copy,
+    python_process: bool,
+) -> Option<StackLabel> {
+    detect_from_rules(project_root, files, CONFIG_RULES, in_scope)
         .or_else(|| {
             in_scope(E::Python)
-                .then(|| python::detect_python_project(project_root, &files, python_process))
+                .then(|| python::detect_python_project(project_root, files, python_process))
                 .flatten()
         })
-        .or_else(|| detect_from_rules(project_root, &files, LATE_CONFIG_RULES, in_scope))
+        .or_else(|| detect_from_rules(project_root, files, LATE_CONFIG_RULES, in_scope))
 }
 
 fn detect_from_rules(

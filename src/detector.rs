@@ -7,10 +7,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use crate::config;
+use crate::config::{self, ConfigScope};
 use crate::ecosystem::Ecosystem;
 use crate::image::detect_from_image;
-use crate::process::find_process_rule_by_names;
+use crate::process::{ProcessRule, find_process_rule_by_names};
 use crate::project::{Walk, accepts_root, has_marker, path_starts_with, project_root_candidates};
 use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 
@@ -38,7 +38,10 @@ use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 ///    [`StackKind::Database`], [`StackKind::Service`], or any future kind.
 /// 3. Project config, when the process label is a [`StackKind::Runtime`] or
 ///    [`StackKind::Tool`], or when the process is unknown but its executable
-///    path lies inside the project root.
+///    belongs to the project: it lies inside the project root, it was built
+///    by `go run` or `go test` into a temporary `go-build*` directory (Go
+///    config only), or it lies in the `target` directory of a Cargo
+///    workspace that contains the root (Rust config only).
 /// 4. The process label, if any.
 ///
 /// Config detection is ecosystem-aware. A known runtime or tool accepts only
@@ -66,12 +69,11 @@ use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 pub struct StackDetector {
     home: Option<PathBuf>,
     project_cache: HashMap<PathBuf, Option<PathBuf>>,
-    /// Config results per project root, one entry per process ecosystem seen
-    /// (`None` for unknown processes).
+    /// Config results per project root, one entry per config scope seen.
     config_cache: HashMap<PathBuf, Vec<ConfigCacheEntry>>,
 }
 
-type ConfigCacheEntry = (Option<Ecosystem>, Option<StackLabel>);
+type ConfigCacheEntry = (ConfigScope, Option<StackLabel>);
 
 impl Default for StackDetector {
     /// Same as [`StackDetector::new`].
@@ -160,17 +162,15 @@ impl StackDetector {
         }
 
         let process_rule = find_process_rule_by_names(input.process_name, input.exe_name);
-        let process_stack = process_rule.map(|(_, label, _)| label);
 
         if let Some(project_root) = input.project_root
-            && config_detection_allowed(process_stack, input.exe_path, project_root)
-            && let Some(label) =
-                self.cached_config_stack(project_root, process_rule.map(|(_, _, eco)| *eco))
+            && let Some(scope) = self.config_scope(process_rule, input.exe_path, project_root)
+            && let Some(label) = self.cached_config_stack(project_root, scope)
         {
             return Some(label);
         }
 
-        process_stack.cloned()
+        process_rule.map(|(_, label, _)| label.clone())
     }
 
     fn cached_project_root(&mut self, start: &Path) -> Option<PathBuf> {
@@ -204,35 +204,77 @@ impl StackDetector {
     fn cached_config_stack(
         &mut self,
         project_root: &Path,
-        ecosystem: Option<Ecosystem>,
+        scope: ConfigScope,
     ) -> Option<StackLabel> {
         if let Some((_, cached)) = self
             .config_cache
             .get(project_root)
-            .and_then(|entries| entries.iter().find(|(seen, _)| *seen == ecosystem))
+            .and_then(|entries| entries.iter().find(|(seen, _)| *seen == scope))
         {
             return cached.clone();
         }
 
-        let result = config::detect_for_ecosystem(project_root, ecosystem);
+        let result = config::detect_for_scope(project_root, scope);
         self.config_cache
             .entry(project_root.to_path_buf())
             .or_default()
-            .push((ecosystem, result.clone()));
+            .push((scope, result.clone()));
         result
+    }
+
+    /// Which config rules may replace (or supply) the process label, or
+    /// `None` when config must not be used.
+    ///
+    /// A known process uses its own ecosystem when its label is a runtime or
+    /// tool. An unknown process uses config only when its executable belongs
+    /// to the project: it lies inside the project root, it was built by
+    /// `go run` or `go test` into a `go-build*` temporary directory, or it lies
+    /// in the `target` directory of a Cargo workspace that contains the root.
+    fn config_scope(
+        &self,
+        process_rule: Option<&ProcessRule>,
+        exe_path: Option<&Path>,
+        project_root: &Path,
+    ) -> Option<ConfigScope> {
+        if let Some((_, label, ecosystem)) = process_rule {
+            return accepts_config_override(label.kind())
+                .then_some(ConfigScope::Ecosystem(*ecosystem));
+        }
+
+        let exe_path = exe_path?;
+        if path_starts_with(exe_path, project_root) {
+            Some(ConfigScope::All)
+        } else if is_go_build_binary(exe_path) {
+            Some(ConfigScope::Ecosystem(Ecosystem::Go))
+        } else if self.is_cargo_workspace_binary(exe_path, project_root) {
+            Some(ConfigScope::Ecosystem(Ecosystem::Rust))
+        } else {
+            None
+        }
+    }
+
+    /// Whether `exe_path` lies in `<workspace>/target` for a Cargo workspace
+    /// root above `project_root`, as a workspace member's binary does.
+    fn is_cargo_workspace_binary(&self, exe_path: &Path, project_root: &Path) -> bool {
+        Walk::new(project_root, self.home.as_deref())
+            .skip(1)
+            .any(|workspace| {
+                path_starts_with(exe_path, &workspace.join("target"))
+                    && config::declares_cargo_workspace(workspace)
+            })
     }
 }
 
-/// Whether a project config label may replace (or supply) the process label.
-fn config_detection_allowed(
-    process_stack: Option<&StackLabel>,
-    exe_path: Option<&Path>,
-    project_root: &Path,
-) -> bool {
-    process_stack.map_or_else(
-        || exe_path.is_some_and(|path| path_starts_with(path, project_root)),
-        |label| accepts_config_override(label.kind()),
-    )
+/// Whether `exe_path` was built by `go run` or `go test`, which place the
+/// binary under a temporary `go-build<digits>` directory.
+fn is_go_build_binary(exe_path: &Path) -> bool {
+    exe_path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .and_then(|name| name.strip_prefix("go-build"))
+            .is_some_and(|rest| rest.bytes().all(|byte| byte.is_ascii_digit()))
+    })
 }
 
 /// Runtime and tool labels are generic hosts for project code; every other
