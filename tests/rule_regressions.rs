@@ -571,3 +571,42 @@ fn phoenix_projects_and_windows_beam_processes() {
         assert_eq!(config_text(dir.path()), Some("Elixir"), "{mix}");
     }
 }
+
+#[test]
+fn new_image_rules_and_connector_companions() {
+    for (image, expected) in [
+        ("confluentinc/cp-kafka:7.7.1", Some("Kafka")),
+        (
+            "mcr.microsoft.com/mssql/server:2022-latest",
+            Some("SQL Server"),
+        ),
+        (
+            "mcr.microsoft.com/mssql/rhel/server:2022-latest",
+            Some("SQL Server"),
+        ),
+        ("pgvector/pgvector:pg17", Some("PostgreSQL")),
+        ("amazoncorretto:21-alpine", Some("Java")),
+        (
+            "public.ecr.aws/amazoncorretto/amazoncorretto:17",
+            Some("Java"),
+        ),
+        ("elixir:1.17-slim", Some("Elixir")),
+        (
+            "hexpm/elixir:1.17.3-erlang-27.1-alpine-3.20.3",
+            Some("Elixir"),
+        ),
+        ("mcr.microsoft.com/dotnet/aspnet:8.0", Some(".NET")),
+        ("confluentinc/cp-kafka-connect:7.7.1", None),
+        ("debezium/kafka-connect:2.7", None),
+        ("bitnami/kafka-connect", None),
+        ("mcr.microsoft.com/mssql-tools", None),
+        ("elixir-ls:latest", None),
+        ("kafka:3.8", Some("Kafka")),
+    ] {
+        assert_eq!(
+            text(what_stack::detect_from_image(image)),
+            expected,
+            "{image}"
+        );
+    }
+}

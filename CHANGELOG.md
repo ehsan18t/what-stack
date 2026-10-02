@@ -20,8 +20,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `Phoenix` for Elixir projects whose `mix.exs` depends on `:phoenix` (not `:phoenix_pubsub` or other `:phoenix_*` packages alone), outside comment lines.
 - `erl` and `werl` process names (the BEAM on Windows) map to `Erlang`, in the Erlang and Elixir ecosystem, so they pick up `Elixir` and `Phoenix` project config.
 
+- Images: `confluentinc/cp-kafka` is `Kafka`, `mcr.microsoft.com/mssql/server` (any image under an `mssql` namespace) is `SQL Server`, `pgvector/pgvector` is `PostgreSQL`, `amazoncorretto` is `Java`, and `elixir` is `Elixir`.
+
 ### Changed
 
+- `connect` is a companion image segment, so `kafka-connect`, `cp-kafka-connect`, and similar connector workers no longer get the `Kafka` label.
 - `remix.config.*` is checked before `vite.config.*`, so a project with both is `Remix` instead of `Vite`.
 
 ### Fixed

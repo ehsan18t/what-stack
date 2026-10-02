@@ -19,6 +19,7 @@ pub const EXACT_IMAGE_RULES: &[(&str, StackLabel)] = &[
     ("bun", labels::BUN),
     ("deno", labels::DENO),
     ("php", labels::PHP),
+    ("elixir", labels::ELIXIR),
 ];
 
 /// Prefix rules match when the base name equals the prefix or continues with a
@@ -29,6 +30,7 @@ pub const PREFIX_IMAGE_RULES: &[(&str, StackLabel)] = &[
     ("postgresql", labels::POSTGRESQL),
     ("postgis", labels::POSTGRESQL),
     ("timescaledb", labels::POSTGRESQL),
+    ("pgvector", labels::POSTGRESQL),
     ("mysql", labels::MYSQL),
     ("mariadb", labels::MARIADB),
     ("mongodb", labels::MONGODB),
@@ -39,6 +41,7 @@ pub const PREFIX_IMAGE_RULES: &[(&str, StackLabel)] = &[
     ("apache", labels::APACHE),
     ("rabbitmq", labels::RABBITMQ),
     ("kafka", labels::KAFKA),
+    ("cp-kafka", labels::KAFKA),
     ("localstack", labels::LOCALSTACK),
     ("elasticsearch", labels::ELASTICSEARCH),
     ("opensearch", labels::OPENSEARCH),
@@ -47,13 +50,15 @@ pub const PREFIX_IMAGE_RULES: &[(&str, StackLabel)] = &[
     ("traefik", labels::TRAEFIK),
     ("openjdk", labels::JAVA),
     ("eclipse-temurin", labels::JAVA),
+    ("amazoncorretto", labels::JAVA),
     ("dotnet", labels::DOTNET),
 ];
 
 /// Name segments that mark a companion image (a metrics exporter, admin UI,
-/// Kubernetes operator, backup job, client, or auth sidecar) rather than the
-/// service itself: `postgres-exporter`, `nginx-prometheus-exporter`,
-/// `opensearch-dashboards`, `mysql-workbench`, `traefik-forward-auth`.
+/// Kubernetes operator, backup job, client, auth sidecar, or connector worker)
+/// rather than the service itself: `postgres-exporter`,
+/// `nginx-prometheus-exporter`, `opensearch-dashboards`, `mysql-workbench`,
+/// `traefik-forward-auth`, `cp-kafka-connect`.
 ///
 /// `proxy` is deliberately absent: `nginx-proxy` and `nginx-proxy-manager` run
 /// Nginx.
@@ -73,7 +78,13 @@ const COMPANION_SEGMENTS: &[&str] = &[
     "shell",
     "curator",
     "auth",
+    "connect",
 ];
+
+/// Registry namespaces whose images all run one stack, whatever the base
+/// name: `mcr.microsoft.com/dotnet/aspnet` and `mcr.microsoft.com/mssql/server`.
+const NAMESPACE_IMAGE_RULES: &[(&str, StackLabel)] =
+    &[("dotnet", labels::DOTNET), ("mssql", labels::SQL_SERVER)];
 
 /// Detect a stack label from a container or artifact image name.
 ///
@@ -83,13 +94,16 @@ const COMPANION_SEGMENTS: &[&str] = &[
 /// Most language runtime images, such as `node`, `python`, and `php`, match
 /// only their exact name, so `python-linter` or `rubygems-mirror` are not
 /// runtimes. Database and service images, plus the `openjdk`,
-/// `eclipse-temurin`, and `dotnet` runtime images, match a prefix followed by
+/// `eclipse-temurin`, `amazoncorretto`, and `dotnet` runtime images, match a
+/// prefix followed by
 /// the end of the name or a separator (`-`, `_`, `.`): `mysql-server` is
 /// `MySQL` and `redis-sentinel` is `Redis`, while `postgrest` is not
 /// `PostgreSQL` and `redisinsight` is not `Redis`.
 /// Prefix matches are rejected when a later name segment marks a companion
 /// image such as `exporter`, `dashboards`, `operator`, `admin`, or `ui`, so
 /// `postgres-exporter` and `opensearch-dashboards` produce no label.
+/// Images under the `dotnet` or `mssql` registry namespaces are `.NET` and
+/// `SQL Server` whatever their base name.
 ///
 /// # Examples
 ///
@@ -120,7 +134,7 @@ pub fn detect_from_image(image: &str) -> Option<StackLabel> {
 
     detect_exact_base(base)
         .or_else(|| detect_prefixed_base(base))
-        .or_else(|| image_has_dotnet_namespace(image).then_some(labels::DOTNET))
+        .or_else(|| detect_namespace(image))
 }
 
 fn detect_exact_base(base: &str) -> Option<StackLabel> {
@@ -137,10 +151,15 @@ fn detect_prefixed_base(base: &str) -> Option<StackLabel> {
         .map(|(_, label)| label.clone())
 }
 
-fn image_has_dotnet_namespace(image: &str) -> bool {
-    image
-        .split('/')
-        .any(|segment| segment.eq_ignore_ascii_case("dotnet"))
+/// Match the namespace segments of `image` (every `/` segment but the last,
+/// which holds the base name) against [`NAMESPACE_IMAGE_RULES`].
+fn detect_namespace(image: &str) -> Option<StackLabel> {
+    image.rsplit('/').skip(1).find_map(|segment| {
+        NAMESPACE_IMAGE_RULES
+            .iter()
+            .find(|(namespace, _)| segment.eq_ignore_ascii_case(namespace))
+            .map(|(_, label)| label.clone())
+    })
 }
 
 const NAME_SEPARATORS: [char; 3] = ['-', '_', '.'];
