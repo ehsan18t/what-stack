@@ -507,3 +507,24 @@ fn gradle_settings_files_mark_multi_module_roots() {
         assert_eq!(config_text(dir.path()), Some(expected), "{marker}");
     }
 }
+
+#[test]
+fn dotnet_solution_files_mark_project_roots() {
+    for solution in ["Shop.sln", "Shop.slnx"] {
+        let dir = project(&[
+            (solution, ""),
+            ("src/Shop.Api/Shop.Api.csproj", "<Project />"),
+        ]);
+        let tests_dir = dir.path().join("tests");
+        std::fs::create_dir_all(&tests_dir).expect("create tests dir");
+        assert_eq!(
+            what_stack::find_project_root(&tests_dir, None).as_deref(),
+            Some(dir.path()),
+            "{solution}"
+        );
+        assert_eq!(config_text(dir.path()), Some(".NET"), "{solution}");
+    }
+
+    let both = project(&[("Shop.sln", ""), ("Shop.fsproj", "")]);
+    assert_eq!(config_text(both.path()), Some(".NET (F#)"));
+}

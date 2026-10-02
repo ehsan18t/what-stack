@@ -120,6 +120,9 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
     (AllOf(&["Gemfile", "config.ru"]), labels::RUBY_RACK, E::Ruby),
     (Extension("csproj"), labels::DOTNET, E::DotNet),
     (Extension("fsproj"), labels::DOTNET_FSHARP, E::DotNet),
+    // A solution root whose projects live in subdirectories.
+    (Extension("sln"), labels::DOTNET, E::DotNet),
+    (Extension("slnx"), labels::DOTNET, E::DotNet),
 ];
 
 /// Detect a stack label from configuration files in a project root.

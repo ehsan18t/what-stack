@@ -2,7 +2,7 @@
 //!
 //! Project detection walks upward from process paths and looks for marker
 //! files such as `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, and
-//! project-file extensions such as `.csproj` and `.fsproj`.
+//! project-file extensions such as `.csproj`, `.fsproj`, `.sln`, and `.slnx`.
 
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
@@ -40,7 +40,7 @@ const PROJECT_MARKERS: &[&str] = &[
     "bun.lock",
 ];
 
-const PROJECT_MARKER_EXTENSIONS: &[&str] = &["csproj", "fsproj"];
+const PROJECT_MARKER_EXTENSIONS: &[&str] = &["csproj", "fsproj", "sln", "slnx"];
 
 /// Maximum number of directories tested during one upward project walk.
 ///

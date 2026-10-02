@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `Spring Boot` for Maven and Gradle builds that use `org.springframework.boot` (the parent POM, a starter dependency, or the Gradle plugin), outside comment lines. `java`, `mvn`, and `gradle` processes in such a project now get this label.
 - `settings.gradle` and `settings.gradle.kts` are project-root markers and Gradle config rules, so a multi-module Gradle root without its own build script is found and labeled `Java (Gradle)` or `Kotlin (Gradle)`.
 
+- `.sln` and `.slnx` solution files are project-root markers and `.NET` config rules, after `.csproj` and `.fsproj`, so a solution root whose projects live in subdirectories is found and labeled.
+
 ### Changed
 
 - `remix.config.*` is checked before `vite.config.*`, so a project with both is `Remix` instead of `Vite`.
