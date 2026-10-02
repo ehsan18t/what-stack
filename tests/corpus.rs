@@ -486,6 +486,31 @@ version = 3.12.3
     ),
 ];
 
+/// Flask project whose virtual environment was created in place (`python -m
+/// venv .` inside the project), below a parent directory that has its own
+/// `package.json`. The walk must stop at the project, not the parent.
+const FLASK_IN_PLACE_VENV: Files = &[
+    ("workspace/package.json", "{\"name\": \"workspace\"}\n"),
+    (
+        "workspace/notes/pyvenv.cfg",
+        "home = /usr/bin
+version = 3.12.3
+",
+    ),
+    (
+        "workspace/notes/requirements.txt",
+        "flask==3.0.0
+",
+    ),
+    (
+        "workspace/notes/app.py",
+        "from flask import Flask
+
+app = Flask(__name__)
+",
+    ),
+];
+
 /// The same project with a conda environment created by `conda create -p
 /// ./env`, which writes no `pyvenv.cfg`.
 const DJANGO_CONDA_ENV: Files = &[
@@ -1031,6 +1056,12 @@ corpus! {
     django_venv_windows_python_without_cwd: Case::new(DJANGO_VENV)
         .process("python.exe").exe("shop/.venv/Scripts/python.exe")
         .expect(Some("Django"), Some("shop"));
+    flask_in_place_venv_python_without_cwd: Case::new(FLASK_IN_PLACE_VENV)
+        .process("python").exe("workspace/notes/bin/python")
+        .expect(Some("Flask"), Some("workspace/notes"));
+    flask_in_place_venv_windows_python_without_cwd: Case::new(FLASK_IN_PLACE_VENV)
+        .process("python.exe").exe("workspace/notes/Scripts/python.exe")
+        .expect(Some("Flask"), Some("workspace/notes"));
     django_conda_env_python_without_cwd: Case::new(DJANGO_CONDA_ENV)
         .process("python").exe("shop/env/bin/python")
         .expect(Some("Python"), None);

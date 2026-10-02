@@ -109,8 +109,10 @@ pub fn project_root_candidates(
 ///
 /// A known runtime inside a Python virtual environment is the exception: the
 /// environment usually belongs to the project around it (`app/.venv/bin/python`
-/// or `app\.venv\Scripts\python.exe`), so the walk starts at the directory
-/// that holds the environment. Environments under a home dot directory
+/// or `app\.venv\Scripts\python.exe`), so the walk starts at the environment
+/// directory itself. A separate `.venv` holds no project markers, so the walk
+/// reaches `app`; an environment created in place (`python -m venv .`) is the
+/// project directory and is found directly. Environments under a home dot directory
 /// (`~/.virtualenvs`, `~/.pyenv`) still yield no root, because
 /// [`accepts_root`] rejects roots found from the executable there.
 fn exe_walk_start(exe: Option<&Path>) -> Option<&Path> {
@@ -122,7 +124,7 @@ fn exe_walk_start(exe: Option<&Path>) -> Option<&Path> {
         .is_some_and(|(_, label, _)| matches!(label.kind(), StackKind::Runtime | StackKind::Tool));
 
     if known_host {
-        virtual_env_dir(exe).and_then(Path::parent)
+        virtual_env_dir(exe)
     } else {
         exe.parent()
     }
