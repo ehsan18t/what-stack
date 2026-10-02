@@ -81,6 +81,7 @@ mod config;
 mod detector;
 mod ecosystem;
 mod image;
+mod labels;
 mod process;
 mod project;
 mod types;
@@ -105,24 +106,11 @@ mod tests {
 
     use super::*;
 
-    fn all_builtin_labels() -> Vec<&'static StackLabel> {
-        static STANDALONE: [StackLabel; 1] = [image::DOTNET_NAMESPACE_LABEL];
-
-        process::PROCESS_MAP
-            .iter()
-            .map(|(_, label, _)| label)
-            .chain(image::EXACT_IMAGE_RULES.iter().map(|(_, label)| label))
-            .chain(image::PREFIX_IMAGE_RULES.iter().map(|(_, label)| label))
-            .chain(STANDALONE.iter())
-            .chain(config::all_labels())
-            .collect()
-    }
-
     #[test]
     fn every_label_text_has_exactly_one_kind_across_all_rules() {
         let mut kinds: HashMap<&str, StackKind> = HashMap::new();
 
-        for label in all_builtin_labels() {
+        for label in labels::ALL {
             let previous = kinds.insert(label.as_str(), label.kind());
             assert!(
                 previous.is_none_or(|kind| kind == label.kind()),
@@ -131,7 +119,10 @@ mod tests {
             );
         }
 
-        assert!(kinds.len() > 40, "expected the full rule set to be scanned");
+        assert!(
+            kinds.len() > 40,
+            "expected every built-in label to be scanned"
+        );
     }
 
     #[test]
@@ -150,7 +141,7 @@ mod tests {
 
     #[test]
     fn builtin_labels_borrow_static_text() {
-        for label in all_builtin_labels() {
+        for label in labels::ALL {
             assert!(
                 matches!(label.clone().into_cow(), std::borrow::Cow::Borrowed(_)),
                 "label {label} should not allocate"

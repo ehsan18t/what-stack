@@ -90,26 +90,6 @@ impl StackLabel {
         }
     }
 
-    pub(crate) const fn runtime(text: &'static str) -> Self {
-        Self::from_static(text, StackKind::Runtime)
-    }
-
-    pub(crate) const fn framework(text: &'static str) -> Self {
-        Self::from_static(text, StackKind::Framework)
-    }
-
-    pub(crate) const fn tool(text: &'static str) -> Self {
-        Self::from_static(text, StackKind::Tool)
-    }
-
-    pub(crate) const fn database(text: &'static str) -> Self {
-        Self::from_static(text, StackKind::Database)
-    }
-
-    pub(crate) const fn service(text: &'static str) -> Self {
-        Self::from_static(text, StackKind::Service)
-    }
-
     /// Return the label text.
     #[must_use]
     pub fn as_str(&self) -> &str {

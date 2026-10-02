@@ -3,8 +3,8 @@ use std::path::Path;
 use self::ConfigMatch::{AllOf, Exact, Extension, Prefix};
 use super::files::ProjectFiles;
 use super::python;
-use crate::StackLabel;
 use crate::ecosystem::Ecosystem as E;
+use crate::{StackLabel, labels};
 
 /// How a config rule recognizes its project files.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,92 +25,44 @@ pub type ConfigRule = (ConfigMatch, StackLabel, E);
 
 /// Rules checked before Python detection, in priority order.
 pub const CONFIG_RULES: &[ConfigRule] = &[
-    (
-        Prefix("next.config"),
-        StackLabel::framework("Next.js"),
-        E::Node,
-    ),
-    (
-        Prefix("nuxt.config"),
-        StackLabel::framework("Nuxt"),
-        E::Node,
-    ),
-    (
-        Exact("angular.json"),
-        StackLabel::framework("Angular"),
-        E::Node,
-    ),
-    (
-        Prefix("svelte.config"),
-        StackLabel::framework("SvelteKit"),
-        E::Node,
-    ),
-    (
-        Prefix("astro.config"),
-        StackLabel::framework("Astro"),
-        E::Node,
-    ),
-    (Prefix("vite.config"), StackLabel::tool("Vite"), E::Node),
-    (
-        Prefix("remix.config"),
-        StackLabel::framework("Remix"),
-        E::Node,
-    ),
-    (
-        Prefix("gatsby-config"),
-        StackLabel::framework("Gatsby"),
-        E::Node,
-    ),
-    (Prefix("vue.config"), StackLabel::tool("Vue CLI"), E::Node),
-    (
-        Prefix("webpack.config"),
-        StackLabel::tool("Webpack"),
-        E::Node,
-    ),
-    (Exact("Cargo.toml"), StackLabel::runtime("Rust"), E::Rust),
-    (Exact("go.mod"), StackLabel::runtime("Go"), E::Go),
-    (Exact("go.work"), StackLabel::runtime("Go"), E::Go),
-    (Exact("pom.xml"), StackLabel::tool("Java (Maven)"), E::Jvm),
-    (
-        Exact("build.gradle.kts"),
-        StackLabel::tool("Kotlin (Gradle)"),
-        E::Jvm,
-    ),
-    (
-        Exact("build.gradle"),
-        StackLabel::tool("Java (Gradle)"),
-        E::Jvm,
-    ),
+    (Prefix("next.config"), labels::NEXT_JS, E::Node),
+    (Prefix("nuxt.config"), labels::NUXT, E::Node),
+    (Exact("angular.json"), labels::ANGULAR, E::Node),
+    (Prefix("svelte.config"), labels::SVELTEKIT, E::Node),
+    (Prefix("astro.config"), labels::ASTRO, E::Node),
+    (Prefix("vite.config"), labels::VITE, E::Node),
+    (Prefix("remix.config"), labels::REMIX, E::Node),
+    (Prefix("gatsby-config"), labels::GATSBY, E::Node),
+    (Prefix("vue.config"), labels::VUE_CLI, E::Node),
+    (Prefix("webpack.config"), labels::WEBPACK, E::Node),
+    (Exact("Cargo.toml"), labels::RUST, E::Rust),
+    (Exact("go.mod"), labels::GO, E::Go),
+    (Exact("go.work"), labels::GO, E::Go),
+    (Exact("pom.xml"), labels::JAVA_MAVEN, E::Jvm),
+    (Exact("build.gradle.kts"), labels::KOTLIN_GRADLE, E::Jvm),
+    (Exact("build.gradle"), labels::JAVA_GRADLE, E::Jvm),
     (
         AllOf(&["artisan", "composer.json"]),
-        StackLabel::framework("Laravel"),
+        labels::LARAVEL,
         E::Php,
     ),
-    (Exact("composer.json"), StackLabel::runtime("PHP"), E::Php),
-    (Exact("mix.exs"), StackLabel::runtime("Elixir"), E::Beam),
-    (Exact("deno.json"), StackLabel::runtime("Deno"), E::Deno),
-    (Exact("deno.jsonc"), StackLabel::runtime("Deno"), E::Deno),
+    (Exact("composer.json"), labels::PHP, E::Php),
+    (Exact("mix.exs"), labels::ELIXIR, E::Beam),
+    (Exact("deno.json"), labels::DENO, E::Deno),
+    (Exact("deno.jsonc"), labels::DENO, E::Deno),
 ];
 
 /// Rules checked after Python detection, in priority order.
 pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
     (
         AllOf(&["Gemfile", "config.ru", "bin/rails"]),
-        StackLabel::framework("Rails"),
+        labels::RAILS,
         E::Ruby,
     ),
-    (AllOf(&["Gemfile", "config.ru"]), RACK_LABEL, E::Ruby),
-    (Extension("csproj"), StackLabel::runtime(".NET"), E::DotNet),
-    (
-        Extension("fsproj"),
-        StackLabel::runtime(".NET (F#)"),
-        E::DotNet,
-    ),
+    (AllOf(&["Gemfile", "config.ru"]), labels::RUBY_RACK, E::Ruby),
+    (Extension("csproj"), labels::DOTNET, E::DotNet),
+    (Extension("fsproj"), labels::DOTNET_FSHARP, E::DotNet),
 ];
-
-/// Label for Ruby projects with both `Gemfile` and `config.ru` but no
-/// `bin/rails`.
-pub const RACK_LABEL: StackLabel = StackLabel::framework("Ruby (Rack)");
 
 const COMMON_CONFIG_SUFFIXES: &[&str] = &["", ".js", ".cjs", ".mjs", ".ts", ".cts", ".mts"];
 

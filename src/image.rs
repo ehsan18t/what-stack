@@ -3,50 +3,50 @@
 //! This module handles only image-string parsing and label matching. It does
 //! not talk to a container daemon or validate that an image exists.
 
-use crate::StackLabel;
+use crate::{StackLabel, labels};
 
 pub const EXACT_IMAGE_RULES: &[(&str, StackLabel)] = &[
-    ("mongo", StackLabel::database("MongoDB")),
-    ("httpd", StackLabel::service("Apache")),
-    ("node", StackLabel::runtime("Node.js")),
-    ("python", StackLabel::runtime("Python")),
-    ("python3", StackLabel::runtime("Python")),
-    ("ruby", StackLabel::runtime("Ruby")),
-    ("golang", StackLabel::runtime("Go")),
-    ("go", StackLabel::runtime("Go")),
-    ("rust", StackLabel::runtime("Rust")),
-    ("bun", StackLabel::runtime("Bun")),
-    ("deno", StackLabel::runtime("Deno")),
-    ("php", StackLabel::runtime("PHP")),
+    ("mongo", labels::MONGODB),
+    ("httpd", labels::APACHE),
+    ("node", labels::NODE),
+    ("python", labels::PYTHON),
+    ("python3", labels::PYTHON),
+    ("ruby", labels::RUBY),
+    ("golang", labels::GO),
+    ("go", labels::GO),
+    ("rust", labels::RUST),
+    ("bun", labels::BUN),
+    ("deno", labels::DENO),
+    ("php", labels::PHP),
 ];
 
 /// Prefix rules match when the base name equals the prefix or continues with a
 /// separator (`-`, `_`, `.`), so `postgrest` is not `postgres`. The image tag
 /// (`:16`) is removed before matching.
 pub const PREFIX_IMAGE_RULES: &[(&str, StackLabel)] = &[
-    ("postgres", StackLabel::database("PostgreSQL")),
-    ("postgresql", StackLabel::database("PostgreSQL")),
-    ("postgis", StackLabel::database("PostgreSQL")),
-    ("timescaledb", StackLabel::database("PostgreSQL")),
-    ("mysql", StackLabel::database("MySQL")),
-    ("mariadb", StackLabel::database("MariaDB")),
-    ("mongodb", StackLabel::database("MongoDB")),
-    ("redis", StackLabel::database("Redis")),
-    ("valkey", StackLabel::database("Valkey")),
-    ("memcached", StackLabel::database("Memcached")),
-    ("nginx", StackLabel::service("Nginx")),
-    ("apache", StackLabel::service("Apache")),
-    ("rabbitmq", StackLabel::service("RabbitMQ")),
-    ("kafka", StackLabel::service("Kafka")),
-    ("localstack", StackLabel::service("LocalStack")),
-    ("elasticsearch", StackLabel::database("Elasticsearch")),
-    ("opensearch", StackLabel::database("OpenSearch")),
-    ("clickhouse", StackLabel::database("ClickHouse")),
-    ("caddy", StackLabel::service("Caddy")),
-    ("traefik", StackLabel::service("Traefik")),
-    ("openjdk", StackLabel::runtime("Java")),
-    ("eclipse-temurin", StackLabel::runtime("Java")),
-    ("dotnet", StackLabel::runtime(".NET")),
+    ("postgres", labels::POSTGRESQL),
+    ("postgresql", labels::POSTGRESQL),
+    ("postgis", labels::POSTGRESQL),
+    ("timescaledb", labels::POSTGRESQL),
+    ("mysql", labels::MYSQL),
+    ("mariadb", labels::MARIADB),
+    ("mongodb", labels::MONGODB),
+    ("redis", labels::REDIS),
+    ("valkey", labels::VALKEY),
+    ("memcached", labels::MEMCACHED),
+    ("nginx", labels::NGINX),
+    ("apache", labels::APACHE),
+    ("rabbitmq", labels::RABBITMQ),
+    ("kafka", labels::KAFKA),
+    ("localstack", labels::LOCALSTACK),
+    ("elasticsearch", labels::ELASTICSEARCH),
+    ("opensearch", labels::OPENSEARCH),
+    ("clickhouse", labels::CLICKHOUSE),
+    ("caddy", labels::CADDY),
+    ("traefik", labels::TRAEFIK),
+    ("openjdk", labels::JAVA),
+    ("eclipse-temurin", labels::JAVA),
+    ("dotnet", labels::DOTNET),
 ];
 
 /// Name segments that mark a companion image (a metrics exporter, admin UI,
@@ -73,10 +73,6 @@ const COMPANION_SEGMENTS: &[&str] = &[
     "curator",
     "auth",
 ];
-
-/// Label for images under a `dotnet` registry namespace, such as
-/// `mcr.microsoft.com/dotnet/aspnet`.
-pub const DOTNET_NAMESPACE_LABEL: StackLabel = StackLabel::runtime(".NET");
 
 /// Detect a stack label from a container or artifact image name.
 ///
@@ -123,7 +119,7 @@ pub fn detect_from_image(image: &str) -> Option<StackLabel> {
 
     detect_exact_base(base)
         .or_else(|| detect_prefixed_base(base))
-        .or_else(|| image_has_dotnet_namespace(image).then_some(DOTNET_NAMESPACE_LABEL))
+        .or_else(|| image_has_dotnet_namespace(image).then_some(labels::DOTNET))
 }
 
 fn detect_exact_base(base: &str) -> Option<StackLabel> {

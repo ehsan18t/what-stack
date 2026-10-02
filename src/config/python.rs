@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use super::files::ProjectFiles;
-use crate::StackLabel;
+use crate::{StackLabel, labels};
 
 const PYTHON_ENTRY_FILES: &[&str] = &["app.py", "main.py", "server.py", "wsgi.py", "asgi.py"];
 
@@ -23,43 +23,37 @@ const DJANGO_SOURCE_PATTERNS: &[&str] = &[
     "get_asgi_application",
 ];
 
-/// Label for Python projects without a recognized framework.
-pub const PYTHON_LABEL: StackLabel = StackLabel::runtime("Python");
-
-/// Label for Django projects.
-pub const DJANGO_LABEL: StackLabel = StackLabel::framework("Django");
-
 type PythonSourcePattern = (StackLabel, &'static [&'static str], &'static str);
 
 pub const PYTHON_SOURCE_PATTERNS: &[PythonSourcePattern] = &[
     (
-        StackLabel::framework("FastAPI"),
+        labels::FASTAPI,
         &["from fastapi import", "import fastapi"],
         "fastapi(",
     ),
     (
-        StackLabel::framework("Starlette"),
+        labels::STARLETTE,
         &["from starlette.applications import", "import starlette"],
         "starlette(",
     ),
     (
-        StackLabel::framework("Litestar"),
+        labels::LITESTAR,
         &["from litestar import", "import litestar"],
         "litestar(",
     ),
     (
-        StackLabel::framework("Flask"),
+        labels::FLASK,
         &["from flask import", "import flask"],
         "flask(",
     ),
 ];
 
 pub const PYTHON_DEPENDENCY_PATTERNS: &[(&str, StackLabel)] = &[
-    ("django", DJANGO_LABEL),
-    ("flask", StackLabel::framework("Flask")),
-    ("fastapi", StackLabel::framework("FastAPI")),
-    ("starlette", StackLabel::framework("Starlette")),
-    ("litestar", StackLabel::framework("Litestar")),
+    ("django", labels::DJANGO),
+    ("flask", labels::FLASK),
+    ("fastapi", labels::FASTAPI),
+    ("starlette", labels::STARLETTE),
+    ("litestar", labels::LITESTAR),
 ];
 
 /// Detect a Python project and its framework.
@@ -81,12 +75,12 @@ pub(super) fn detect_python_project(
     }
 
     if files.contains_exact("manage.py") {
-        return Some(DJANGO_LABEL);
+        return Some(labels::DJANGO);
     }
 
     detect_python_framework_from_entry_files(project_root, files)
         .or_else(|| detect_python_framework_from_dependencies(project_root, files))
-        .or_else(|| (!python_process).then_some(PYTHON_LABEL))
+        .or_else(|| (!python_process).then_some(labels::PYTHON))
 }
 
 fn is_python_project(files: &ProjectFiles, python_process: bool) -> bool {
@@ -143,7 +137,7 @@ fn detect_python_framework_from_source(source: &str) -> Option<StackLabel> {
     let normalized = source.to_ascii_lowercase();
 
     if contains_any(&normalized, DJANGO_SOURCE_PATTERNS) {
-        return Some(DJANGO_LABEL);
+        return Some(labels::DJANGO);
     }
 
     PYTHON_SOURCE_PATTERNS
