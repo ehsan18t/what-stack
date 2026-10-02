@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use self::ConfigMatch::{AllOf, Exact, Extension, FileToken, NodeDependency, Prefix};
+use self::ConfigMatch::{
+    AllOf, Exact, Extension, FileToken, NodeDependency, NodeRuntimeDependency, Prefix,
+};
 use super::files::ProjectFiles;
 use super::python;
 use crate::ecosystem::Ecosystem as E;
@@ -21,6 +23,10 @@ pub enum ConfigMatch {
     /// `package.json` lists any of these packages under `"dependencies"` or
     /// `"devDependencies"`.
     NodeDependency(&'static [&'static str]),
+    /// `package.json` lists any of these packages under `"dependencies"`. A
+    /// package that only appears in `"devDependencies"` (a test server, a
+    /// mock) does not describe what the project runs.
+    NodeRuntimeDependency(&'static [&'static str]),
     /// The named root file mentions the token outside comment lines.
     FileToken(&'static str, &'static str),
 }
@@ -48,9 +54,6 @@ pub const CONFIG_RULES: &[ConfigRule] = &[
     (Prefix("gatsby-config"), labels::GATSBY, E::Node),
     (Prefix("vue.config"), labels::VUE_CLI, E::Node),
     (Prefix("webpack.config"), labels::WEBPACK, E::Node),
-    // Express is the weakest Node signal: many projects use it beside a
-    // framework or bundler that describes them better.
-    (NodeDependency(&["express"]), labels::EXPRESS, E::Node),
     (Exact("Cargo.toml"), labels::RUST, E::Rust),
     (Exact("go.mod"), labels::GO, E::Go),
     (Exact("go.work"), labels::GO, E::Go),
@@ -124,6 +127,14 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
     // A solution root whose projects live in subdirectories.
     (Extension("sln"), labels::DOTNET, E::DotNet),
     (Extension("slnx"), labels::DOTNET, E::DotNet),
+    // Express is the weakest signal of all: many projects use it beside a
+    // framework, a bundler, or another language's build that describes them
+    // better, so it comes after every other rule, including Python detection.
+    (
+        NodeRuntimeDependency(&["express"]),
+        labels::EXPRESS,
+        E::Node,
+    ),
 ];
 
 /// Detect a stack label from configuration files in a project root.
@@ -134,9 +145,10 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
 /// projects are also recognized from `package.json` dependencies: `next`
 /// (`Next.js` without a config file), `@nestjs/core` (`NestJS`, also from
 /// `nest-cli.json`), Remix packages such as `@remix-run/react` (`Remix`, even
-/// with `vite.config.ts`), and `express` (`Express`, only when no other Node
-/// framework or tool config matches). `react-router.config.ts` is
-/// `React Router`. Python
+/// with `vite.config.ts`), and `express` under `"dependencies"` (`Express`,
+/// only when no other rule matches, so a repo with `package.json` and
+/// `Cargo.toml`, `go.mod`, or a `.csproj` keeps the label of that build).
+/// `react-router.config.ts` is `React Router`. Python
 /// projects get a second pass that can identify `Django`, `Flask`, `FastAPI`,
 /// `Starlette`, and `Litestar` from entry files or dependency files. Ruby
 /// projects need `Gemfile` and `config.ru` (`Ruby (Rack)`), plus `bin/rails`
@@ -249,7 +261,10 @@ fn rule_matches(project_root: &Path, files: &ProjectFiles, matcher: ConfigMatch)
             .iter()
             .all(|path| files.contains_path(project_root, path)),
         Extension(extension) => files.contains_extension(extension),
-        NodeDependency(packages) => files.has_node_dependency(project_root, packages),
+        NodeDependency(packages) => files.node_dependencies(project_root).has_any(packages),
+        NodeRuntimeDependency(packages) => {
+            files.node_dependencies(project_root).has_runtime(packages)
+        }
         FileToken(file_name, token) => files.mentions_token(project_root, file_name, token),
     }
 }

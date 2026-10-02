@@ -5,27 +5,54 @@
 //! string. A small scanner over the (capped, already decoded) text finds them
 //! without adding a JSON dependency to the crate.
 
-/// Keys whose object values list a package's dependencies.
-const DEPENDENCY_KEYS: &[&str] = &["\"dependencies\"", "\"devDependencies\""];
+/// Package names from the dependency maps of a `package.json`.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct NodeDependencies {
+    /// Keys of `"dependencies"`: packages the program needs at run time.
+    pub runtime: Vec<String>,
+    /// Keys of `"devDependencies"`: build, test, and tooling packages.
+    pub dev: Vec<String>,
+}
 
-/// Package names listed under `"dependencies"` or `"devDependencies"`.
+impl NodeDependencies {
+    /// Whether any of `packages` is a runtime dependency.
+    pub fn has_runtime(&self, packages: &[&str]) -> bool {
+        contains_any(&self.runtime, packages)
+    }
+
+    /// Whether any of `packages` is a runtime or development dependency.
+    pub fn has_any(&self, packages: &[&str]) -> bool {
+        self.has_runtime(packages) || contains_any(&self.dev, packages)
+    }
+}
+
+fn contains_any(names: &[String], packages: &[&str]) -> bool {
+    names.iter().any(|name| packages.contains(&name.as_str()))
+}
+
+/// Package names listed under `"dependencies"` and `"devDependencies"`.
 ///
 /// Every occurrence of either key that is followed by `:` and an object is
 /// read, so a nested object with the same key also counts. Malformed or
 /// truncated objects yield the names read before the problem.
-pub fn dependency_names(json: &str) -> Vec<String> {
+pub fn dependency_names(json: &str) -> NodeDependencies {
+    NodeDependencies {
+        runtime: names_under(json, "\"dependencies\""),
+        dev: names_under(json, "\"devDependencies\""),
+    }
+}
+
+fn names_under(json: &str, key: &str) -> Vec<String> {
     let mut names = Vec::new();
 
-    for key in DEPENDENCY_KEYS {
-        for (index, _) in json.match_indices(key) {
-            let object = json
-                .get(index + key.len()..)
-                .and_then(|rest| rest.trim_start().strip_prefix(':'))
-                .and_then(|rest| rest.trim_start().strip_prefix('{'));
+    for (index, _) in json.match_indices(key) {
+        let object = json
+            .get(index + key.len()..)
+            .and_then(|rest| rest.trim_start().strip_prefix(':'))
+            .and_then(|rest| rest.trim_start().strip_prefix('{'));
 
-            if let Some(object) = object {
-                collect_object_keys(object, &mut names);
-            }
+        if let Some(object) = object {
+            collect_object_keys(object, &mut names);
         }
     }
 
@@ -97,26 +124,27 @@ mod tests {
             "files": ["dependencies"]
         }"#;
 
-        assert_eq!(
-            dependency_names(json),
-            ["next", "react", "@remix-run/dev", "eslint"]
-        );
+        let names = dependency_names(json);
+        assert_eq!(names.runtime, ["next", "react"]);
+        assert_eq!(names.dev, ["@remix-run/dev", "eslint"]);
+        assert!(names.has_runtime(&["react"]));
+        assert!(!names.has_runtime(&["eslint"]));
+        assert!(names.has_any(&["eslint"]));
+        assert!(!names.has_any(&["vue"]));
     }
 
     #[test]
     fn tolerates_escapes_odd_values_and_truncation() {
+        let runtime = |json| dependency_names(json).runtime;
         assert_eq!(
-            dependency_names(r#"{"dependencies":{"a\"b":"1","c":null,"d":"}"}}"#),
+            runtime(r#"{"dependencies":{"a\"b":"1","c":null,"d":"}"}}"#),
             ["a\\\"b", "c", "d"]
         );
+        assert_eq!(runtime(r#"{"dependencies": {}}"#), Vec::<String>::new());
         assert_eq!(
-            dependency_names(r#"{"dependencies": {}}"#),
-            Vec::<String>::new()
-        );
-        assert_eq!(
-            dependency_names(r#"{"dependencies": {"express": "4", "ne"#),
+            runtime(r#"{"dependencies": {"express": "4", "ne"#),
             ["express"]
         );
-        assert_eq!(dependency_names("not json"), Vec::<String>::new());
+        assert_eq!(dependency_names("not json"), NodeDependencies::default());
     }
 }

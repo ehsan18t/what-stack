@@ -365,7 +365,90 @@ fn node_dependency_rules_stay_in_the_node_ecosystem() {
         text(detector.detect_stack(StackInput::new("go").project_root(dir.path()))),
         Some("Go")
     );
+    assert_eq!(
+        text(detector.detect_stack(StackInput::new("node").project_root(dir.path()))),
+        Some("Express")
+    );
+    assert_eq!(config_text(dir.path()), Some("Go"));
+}
+
+#[test]
+fn express_comes_after_every_non_node_rule() {
+    // 0.1.0 had no Express rule, so these roots got the label of their
+    // other build; a frontend or tooling `package.json` must not change that.
+    const EXPRESS: (&str, &str) = ("package.json", r#"{"dependencies": {"express": "4"}}"#);
+    for (other, expected) in [
+        (
+            (
+                "Cargo.toml",
+                "[package]
+name = \"api\"
+",
+            ),
+            "Rust",
+        ),
+        (
+            (
+                "go.mod",
+                "module example.com/api
+",
+            ),
+            "Go",
+        ),
+        (
+            (
+                "Web.csproj",
+                "<Project />
+",
+            ),
+            ".NET",
+        ),
+        (
+            (
+                "pom.xml",
+                "<project />
+",
+            ),
+            "Java (Maven)",
+        ),
+        (("composer.json", "{}"), "PHP"),
+        (
+            (
+                "mix.exs",
+                "defmodule Api.MixProject do
+end
+",
+            ),
+            "Elixir",
+        ),
+        (("deno.json", "{}"), "Deno"),
+        (
+            (
+                "pyproject.toml",
+                "[project]
+name = \"api\"
+",
+            ),
+            "Python",
+        ),
+    ] {
+        let dir = project(&[EXPRESS, other]);
+        assert_eq!(config_text(dir.path()), Some(expected), "{other:?}");
+    }
+
+    let dir = project(&[EXPRESS]);
     assert_eq!(config_text(dir.path()), Some("Express"));
+}
+
+#[test]
+fn express_only_in_dev_dependencies_is_not_express() {
+    // An npm library that starts an Express server in its tests.
+    let dir = project(&[(
+        "package.json",
+        r#"{"name": "http-client", "devDependencies": {"express": "4", "supertest": "7"}}"#,
+    )]);
+    assert_eq!(config_text(dir.path()), None);
+    assert_eq!(node_label(dir.path()), Some("Node.js"));
 }
 
 #[test]
