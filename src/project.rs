@@ -56,7 +56,11 @@ pub const MAX_WALK_DEPTH: usize = 64;
 /// 1. Walk upward from the working directory set by [`ProjectInput::cwd`].
 /// 2. Walk upward from the parent directory of the executable set by
 ///    [`ProjectInput::exe`], unless the executable is a known runtime or tool
-///    such as `node`, `python`, or `cargo`.
+///    such as `node`, `python`, or `cargo`. A known runtime inside a Python
+///    virtual environment (a directory with `pyvenv.cfg` one or two levels
+///    above the executable, as in `app/.venv/bin/python` or
+///    `app\.venv\Scripts\python.exe`) walks from the directory holding the
+///    environment instead.
 /// 3. Walk upward from the parent directory of each absolute path in the
 ///    arguments set by [`ProjectInput::cmd`].
 ///
@@ -102,6 +106,13 @@ pub fn project_root_candidates(
 /// known runtime or tool. An installed `node` or `python` says nothing about
 /// the project it runs, and walking up from its directory finds the install
 /// tree instead (`~/.nvm/versions/node/v20/bin/node`).
+///
+/// A known runtime inside a Python virtual environment is the exception: the
+/// environment usually belongs to the project around it (`app/.venv/bin/python`
+/// or `app\.venv\Scripts\python.exe`), so the walk starts at the directory
+/// that holds the environment. Environments under a home dot directory
+/// (`~/.virtualenvs`, `~/.pyenv`) still yield no root, because
+/// [`accepts_root`] rejects roots found from the executable there.
 fn exe_walk_start(exe: Option<&Path>) -> Option<&Path> {
     let exe = exe?;
     let known_host = exe
@@ -110,7 +121,22 @@ fn exe_walk_start(exe: Option<&Path>) -> Option<&Path> {
         .and_then(|name| find_process_rule_by_names(name, None))
         .is_some_and(|(_, label, _)| matches!(label.kind(), StackKind::Runtime | StackKind::Tool));
 
-    if known_host { None } else { exe.parent() }
+    if known_host {
+        virtual_env_dir(exe).and_then(Path::parent)
+    } else {
+        exe.parent()
+    }
+}
+
+/// The Python virtual environment holding `exe`: its parent (`Scripts` on
+/// Windows, `bin` elsewhere) or grandparent when that directory contains
+/// `pyvenv.cfg`, which `venv`, `virtualenv`, and `uv` all write. Conda
+/// environments have no `pyvenv.cfg` and are not matched.
+fn virtual_env_dir(exe: &Path) -> Option<&Path> {
+    exe.ancestors()
+        .skip(1)
+        .take(2)
+        .find(|dir| dir.join("pyvenv.cfg").is_file())
 }
 
 /// Whether a root found from a walk start may be used. Roots found from the

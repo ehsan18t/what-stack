@@ -458,6 +458,71 @@ const DJANGO: Files = &[
     ),
 ];
 
+/// Django project with its virtual environment inside the project, as
+/// `python -m venv .venv` or `uv venv` creates it. Both the Unix (`bin`) and
+/// the Windows (`Scripts`) layouts are present.
+const DJANGO_VENV: Files = &[
+    (
+        "shop/pyproject.toml",
+        "[project]
+name = \"shop\"
+dependencies = [\"django>=5.0\"]
+",
+    ),
+    (
+        "shop/manage.py",
+        "import sys
+from django.core.management import execute_from_command_line
+
+execute_from_command_line(sys.argv)
+",
+    ),
+    (
+        "shop/.venv/pyvenv.cfg",
+        "home = /usr/bin
+include-system-site-packages = false
+version = 3.12.3
+",
+    ),
+];
+
+/// The same project with a conda environment created by `conda create -p
+/// ./env`, which writes no `pyvenv.cfg`.
+const DJANGO_CONDA_ENV: Files = &[
+    (
+        "shop/pyproject.toml",
+        "[project]
+name = \"shop\"
+dependencies = [\"django>=5.0\"]
+",
+    ),
+    (
+        "shop/manage.py",
+        "import sys
+from django.core.management import execute_from_command_line
+
+execute_from_command_line(sys.argv)
+",
+    ),
+    ("shop/env/conda-meta/history", ""),
+];
+
+/// virtualenvwrapper keeps environments under `~/.virtualenvs`; a stray
+/// requirements file there must not become the project of every environment.
+const VIRTUALENVWRAPPER: Files = &[
+    (
+        ".virtualenvs/requirements.txt",
+        "flask
+",
+    ),
+    (
+        ".virtualenvs/shop/pyvenv.cfg",
+        "home = /usr/bin
+version = 3.12.3
+",
+    ),
+];
+
 /// Django project nested below the repository root, with the dependency file
 /// only at the root.
 const DJANGO_NESTED_SRC: Files = &[
@@ -960,6 +1025,18 @@ corpus! {
         .process("gunicorn: maste").exe(PYTHON).cwd("mysite")
         .cmd(&["~/mysite/.venv/bin/gunicorn", "mysite.wsgi"])
         .expect(Some("Django"), Some("mysite"));
+    django_venv_python_without_cwd: Case::new(DJANGO_VENV)
+        .process("python").exe("shop/.venv/bin/python")
+        .expect(Some("Django"), Some("shop"));
+    django_venv_windows_python_without_cwd: Case::new(DJANGO_VENV)
+        .process("python.exe").exe("shop/.venv/Scripts/python.exe")
+        .expect(Some("Django"), Some("shop"));
+    django_conda_env_python_without_cwd: Case::new(DJANGO_CONDA_ENV)
+        .process("python").exe("shop/env/bin/python")
+        .expect(Some("Python"), None);
+    virtualenvwrapper_python_has_no_project: Case::new(VIRTUALENVWRAPPER)
+        .process("python").exe(".virtualenvs/shop/bin/python")
+        .expect(Some("Python"), None);
     django_nested_src_mysite: Case::new(DJANGO_NESTED_SRC)
         .process("python3").exe(PYTHON).cwd("portal/src/mysite")
         .expect(Some("Django"), Some("portal"));
@@ -1101,5 +1178,8 @@ corpus! {
         .expect(Some("Phoenix"), Some("chat"));
     nvm_node_has_no_project: Case::new(NVM)
         .process("node").exe(".nvm/versions/node/v20.11.1/bin/node").cwd("")
+        .expect(Some("Node.js"), None);
+    nvm_node_without_cwd_has_no_project: Case::new(NVM)
+        .process("node").exe(".nvm/versions/node/v20.11.1/bin/node")
         .expect(Some("Node.js"), None);
 }
