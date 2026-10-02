@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use self::ConfigMatch::{AllOf, Exact, Extension, NodeDependency, Prefix};
+use self::ConfigMatch::{AllOf, Exact, Extension, FileToken, NodeDependency, Prefix};
 use super::files::ProjectFiles;
 use super::python;
 use crate::ecosystem::Ecosystem as E;
@@ -21,6 +21,8 @@ pub enum ConfigMatch {
     /// `package.json` lists any of these packages under `"dependencies"` or
     /// `"devDependencies"`.
     NodeDependency(&'static [&'static str]),
+    /// The named root file mentions the token outside comment lines.
+    FileToken(&'static str, &'static str),
 }
 
 /// One config rule: matcher, label, and the ecosystem of the label.
@@ -52,9 +54,29 @@ pub const CONFIG_RULES: &[ConfigRule] = &[
     (Exact("Cargo.toml"), labels::RUST, E::Rust),
     (Exact("go.mod"), labels::GO, E::Go),
     (Exact("go.work"), labels::GO, E::Go),
+    // The Spring Boot parent POM, starters, and Gradle plugin all use this
+    // group id.
+    (
+        FileToken("pom.xml", SPRING_BOOT_GROUP),
+        labels::SPRING_BOOT,
+        E::Jvm,
+    ),
+    (
+        FileToken("build.gradle.kts", SPRING_BOOT_GROUP),
+        labels::SPRING_BOOT,
+        E::Jvm,
+    ),
+    (
+        FileToken("build.gradle", SPRING_BOOT_GROUP),
+        labels::SPRING_BOOT,
+        E::Jvm,
+    ),
     (Exact("pom.xml"), labels::JAVA_MAVEN, E::Jvm),
     (Exact("build.gradle.kts"), labels::KOTLIN_GRADLE, E::Jvm),
     (Exact("build.gradle"), labels::JAVA_GRADLE, E::Jvm),
+    // Root of a multi-module Gradle build without its own build script.
+    (Exact("settings.gradle.kts"), labels::KOTLIN_GRADLE, E::Jvm),
+    (Exact("settings.gradle"), labels::JAVA_GRADLE, E::Jvm),
     (
         AllOf(&["artisan", "composer.json"]),
         labels::LARAVEL,
@@ -75,6 +97,8 @@ pub const CONFIG_RULES: &[ConfigRule] = &[
     (Exact("deno.json"), labels::DENO, E::Deno),
     (Exact("deno.jsonc"), labels::DENO, E::Deno),
 ];
+
+const SPRING_BOOT_GROUP: &str = "org.springframework.boot";
 
 /// Remix application packages. `@remix-run/router` is left out: it is the
 /// routing core of React Router 6 and appears in plain React apps.
@@ -114,6 +138,9 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
 /// projects need `Gemfile` and `config.ru` (`Ruby (Rack)`), plus `bin/rails`
 /// for `Rails`. PHP projects with `artisan` next to `composer.json` are
 /// `Laravel`, and those with `symfony.lock` or `bin/console` are `Symfony`.
+/// Maven and Gradle builds that use `org.springframework.boot` are
+/// `Spring Boot`; a multi-module Gradle root with only `settings.gradle` or
+/// `settings.gradle.kts` is a Gradle project.
 ///
 /// This function knows nothing about the process, so it uses the same rules
 /// [`StackDetector`](crate::StackDetector) applies to an unknown process.
@@ -218,5 +245,6 @@ fn rule_matches(project_root: &Path, files: &ProjectFiles, matcher: ConfigMatch)
             .all(|path| files.contains_path(project_root, path)),
         Extension(extension) => files.contains_extension(extension),
         NodeDependency(packages) => files.has_node_dependency(project_root, packages),
+        FileToken(file_name, token) => files.mentions_token(project_root, file_name, token),
     }
 }

@@ -29,6 +29,8 @@ const PROJECT_MARKERS: &[&str] = &[
     "pom.xml",
     "build.gradle",
     "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
     "composer.json",
     "Gemfile",
     "mix.exs",

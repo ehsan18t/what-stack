@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::HashSet;
 use std::fs::File;
@@ -86,6 +87,21 @@ impl ProjectFiles {
             .any(|name| packages.contains(&name.as_str()))
     }
 
+    /// Whether `file_name` mentions `token` outside comments, followed by a
+    /// character that cannot continue an identifier.
+    ///
+    /// XML comments (`<!-- -->`, possibly spanning lines) are removed, and
+    /// lines starting with `#`, `//`, `/*`, or `*` are skipped, which covers
+    /// Maven, Gradle, and Elixir comments well enough for marker tokens.
+    pub(super) fn mentions_token(&self, project_root: &Path, file_name: &str, token: &str) -> bool {
+        self.read_text(project_root, file_name).is_some_and(|text| {
+            without_xml_comments(&text)
+                .lines()
+                .filter(|line| !is_comment_line(line))
+                .any(|line| contains_token(line, token))
+        })
+    }
+
     /// Like [`read_text`](Self::read_text), but `None` when the file is
     /// longer than [`MAX_SCAN_BYTES`], for callers that must see every line.
     pub(super) fn read_complete_text(
@@ -101,6 +117,41 @@ impl ProjectFiles {
             .filter(|(_, complete)| *complete)
             .map(|(bytes, _)| decode_text(bytes))
     }
+}
+
+const COMMENT_PREFIXES: &[&str] = &["#", "//", "/*", "*"];
+
+/// Remove `<!-- ... -->` spans. An unterminated comment runs to the end.
+fn without_xml_comments(text: &str) -> Cow<'_, str> {
+    if !text.contains("<!--") {
+        return Cow::Borrowed(text);
+    }
+
+    let mut kept = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((before, comment)) = rest.split_once("<!--") {
+        kept.push_str(before);
+        rest = comment.split_once("-->").map_or("", |(_, after)| after);
+    }
+    kept.push_str(rest);
+    Cow::Owned(kept)
+}
+
+fn is_comment_line(line: &str) -> bool {
+    let line = line.trim_start();
+    COMMENT_PREFIXES
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
+}
+
+/// Whether `token` occurs in `line` and is not followed by an identifier
+/// character, so `:phoenix` does not match `:phoenix_pubsub`.
+fn contains_token(line: &str, token: &str) -> bool {
+    line.match_indices(token).any(|(start, _)| {
+        line.as_bytes()
+            .get(start + token.len())
+            .is_none_or(|next| !(next.is_ascii_alphanumeric() || *next == b'_'))
+    })
 }
 
 /// Suffixes accepted after a config name prefix: `next.config` matches

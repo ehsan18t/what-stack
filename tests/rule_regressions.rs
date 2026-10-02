@@ -434,3 +434,76 @@ fn symfony_projects_are_recognized_from_flex_lock_or_console() {
         "bin/console must be a file"
     );
 }
+
+const SPRING_POM: &str = r"<project>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.3.4</version>
+  </parent>
+</project>
+";
+
+#[test]
+fn spring_boot_builds_are_recognized_for_jvm_processes() {
+    let mut detector = StackDetector::with_home(None);
+    for files in [
+        &[("pom.xml", SPRING_POM)][..],
+        &[(
+            "build.gradle.kts",
+            "plugins {\n    id(\"org.springframework.boot\") version \"3.3.4\"\n}\n",
+        )][..],
+        &[(
+            "build.gradle",
+            "dependencies {\n    implementation 'org.springframework.boot:spring-boot-starter-web'\n}\n",
+        )][..],
+    ] {
+        let dir = project(files);
+        assert_eq!(config_text(dir.path()), Some("Spring Boot"), "{files:?}");
+        for process in ["java", "mvn", "gradle"] {
+            assert_eq!(
+                text(detector.detect_stack(StackInput::new(process).project_root(dir.path()))),
+                Some("Spring Boot"),
+                "{process} {files:?}"
+            );
+        }
+    }
+
+    for (files, expected) in [
+        (
+            &[(
+                "pom.xml",
+                "<project><!-- org.springframework.boot later -->\n<!--\n<dependency>\n  <groupId>org.springframework.boot</groupId>\n</dependency>\n-->\n</project>\n",
+            )][..],
+            "Java (Maven)",
+        ),
+        (
+            &[(
+                "build.gradle",
+                "// id 'org.springframework.boot'\napply plugin: 'java'\n",
+            )][..],
+            "Java (Gradle)",
+        ),
+    ] {
+        let dir = project(files);
+        assert_eq!(config_text(dir.path()), Some(expected), "{files:?}");
+    }
+}
+
+#[test]
+fn gradle_settings_files_mark_multi_module_roots() {
+    for (marker, expected) in [
+        ("settings.gradle", "Java (Gradle)"),
+        ("settings.gradle.kts", "Kotlin (Gradle)"),
+    ] {
+        let dir = project(&[(marker, "rootProject.name = \"shop\"\n")]);
+        let nested = dir.path().join("docs/guide");
+        std::fs::create_dir_all(&nested).expect("create nested dir");
+        assert_eq!(
+            what_stack::find_project_root(&nested, None).as_deref(),
+            Some(dir.path()),
+            "{marker}"
+        );
+        assert_eq!(config_text(dir.path()), Some(expected), "{marker}");
+    }
+}
