@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-02
+
 ### Added
 
 - Node framework labels from `package.json` dependencies, read with a small built-in scanner (no JSON dependency): `Next.js` from `next` without a config file, `NestJS` from `@nestjs/core` or `nest-cli.json`, `Remix` from Remix packages such as `@remix-run/react` (ahead of `vite.config.*`), and `Express` from `express` under `dependencies` (not `devDependencies` alone, which an npm library with an Express test server has). Express is checked after every other rule, Python detection included, so a repo whose `package.json` lists `express` beside `Cargo.toml`, `go.mod`, or a `.csproj` keeps the `Rust`, `Go`, or `.NET` label it got from 0.1.0. Only the top-level `dependencies` and `devDependencies` maps are read: the same keys nested under `pnpm.packageExtensions` or `overrides`, or inside strings, do not count. `react-router.config.*` is `React Router` (React Router v7 framework mode), ahead of `vite.config.*`.
@@ -53,5 +55,6 @@ Initial release. `what-stack` is a dependency-light library that detects project
 - Supported sources: process names for common runtimes, app servers (Gunicorn, Uvicorn, Puma), databases, web servers, search engines, message brokers (RabbitMQ, Kafka), and dev tools; images for the same databases and services plus PostGIS, TimescaleDB, and language runtimes; config files for Next.js, Nuxt, Angular, SvelteKit, Astro, Vite, Remix, Gatsby, Vue CLI, Webpack, Rust, Go, Maven, Gradle, Laravel, PHP, Elixir, Deno, Rails, Rack, .NET, and Python frameworks (Django, Flask, FastAPI, Starlette, Litestar); project markers such as `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `composer.json`, `Gemfile`, `mix.exs`, and `.csproj`.
 - Linux, Windows, and macOS support. Minimum supported Rust version: 1.88.
 
-[Unreleased]: https://github.com/ehsan18t/what-stack/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ehsan18t/what-stack/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/ehsan18t/what-stack/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/ehsan18t/what-stack/releases/tag/v0.1.0
