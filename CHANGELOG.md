@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `find_project_root` and the other project walks test the current directory for a relative single-name start: `find_project_root("src")` with `Cargo.toml` in the working directory returns `.` instead of `None`.
+
 ## [0.1.0] - 2026-10-01
 
 Initial release. `what-stack` is a dependency-light library that detects project roots and technology stacks from generic inputs, with no async runtime, regex engine, logging facade, or subprocesses.

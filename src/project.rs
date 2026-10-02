@@ -6,7 +6,7 @@
 
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[cfg(unix)]
 use std::ffi::CStr;
@@ -93,6 +93,8 @@ pub fn project_root_candidates(input: ProjectInput<'_>) -> impl Iterator<Item = 
 /// ceiling comparison ignores ASCII case, matching the file system.
 ///
 /// At most [`MAX_WALK_DEPTH`] directories are tested, starting with `start`.
+/// A relative `start` is walked lexically and ends at the current directory,
+/// so `src` tests `src` and then `.`, and a hit there is returned as `.`.
 ///
 /// # Examples
 ///
@@ -129,13 +131,25 @@ pub fn project_name(root: &Path) -> Option<Cow<'_, str>> {
 
 /// Directories tested by one upward walk from `start`, nearest first.
 ///
-/// The walk stops before `home` and after [`MAX_WALK_DEPTH`] directories.
+/// The walk stops before `home` and after [`MAX_WALK_DEPTH`] directories. The
+/// walk is lexical, so the parent of a relative single-name start such as
+/// `src` is the empty path; it stands for the current directory and is tested
+/// as `.`.
 pub fn walk_ancestors<'a>(
     start: &'a Path,
     home: Option<&'a Path>,
 ) -> impl Iterator<Item = &'a Path> + 'a {
+    let empty_means_current = matches!(start.components().next(), Some(Component::Normal(_)));
+
     start
         .ancestors()
+        .filter_map(move |dir| {
+            if dir.as_os_str().is_empty() {
+                empty_means_current.then_some(Path::new("."))
+            } else {
+                Some(dir)
+            }
+        })
         .take(MAX_WALK_DEPTH)
         .take_while(move |dir| home.is_none_or(|home| !paths_equal(dir, home)))
 }
@@ -421,6 +435,33 @@ mod tests {
             select_home_dir(None, sudo_home.clone(), env_home),
             sudo_home,
             "sudo home should remain the fallback when passwd lookup is unavailable"
+        );
+    }
+
+    fn walk(start: &str) -> Vec<&Path> {
+        walk_ancestors(Path::new(start), None).collect()
+    }
+
+    #[test]
+    fn relative_walks_end_at_the_current_directory() {
+        assert_eq!(walk("src"), [Path::new("src"), Path::new(".")]);
+        assert_eq!(
+            walk("src/bin"),
+            [Path::new("src/bin"), Path::new("src"), Path::new(".")]
+        );
+        assert_eq!(walk("."), [Path::new(".")]);
+        assert_eq!(walk("./src"), [Path::new("./src"), Path::new(".")]);
+        assert_eq!(walk("../x"), [Path::new("../x"), Path::new("..")]);
+        assert_eq!(walk(""), Vec::<&Path>::new());
+    }
+
+    #[test]
+    fn relative_start_finds_a_marker_in_the_current_directory() {
+        // Tests run with the package root, which holds Cargo.toml, as the
+        // working directory.
+        assert_eq!(
+            find_project_root(Path::new("src"), None).as_deref(),
+            Some(Path::new("."))
         );
     }
 }
