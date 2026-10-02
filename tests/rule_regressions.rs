@@ -439,6 +439,45 @@ fn node_dependency_rules_stay_in_the_node_ecosystem() {
 }
 
 #[test]
+fn sveltekit_needs_the_kit_package_beside_svelte_config() {
+    const SVELTE_CONFIG: (&str, &str) = (
+        "svelte.config.js",
+        "import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default { preprocess: vitePreprocess() };
+",
+    );
+    const VITE_CONFIG: (&str, &str) = (
+        "vite.config.js",
+        "export default {};
+",
+    );
+
+    // `npm create vite` with the Svelte template: no SvelteKit.
+    let plain = project(&[
+        (
+            "package.json",
+            r#"{"devDependencies": {"@sveltejs/vite-plugin-svelte": "3", "svelte": "4", "vite": "5"}}"#,
+        ),
+        SVELTE_CONFIG,
+        VITE_CONFIG,
+    ]);
+    assert_eq!(config_text(plain.path()), Some("Vite"));
+    assert_eq!(node_label(plain.path()), Some("Vite"));
+
+    for package_json in [
+        r#"{"devDependencies": {"@sveltejs/kit": "2", "svelte": "4", "vite": "5"}}"#,
+        r#"{"dependencies": {"@sveltejs/kit": "2"}}"#,
+    ] {
+        let kit = project(&[("package.json", package_json), SVELTE_CONFIG, VITE_CONFIG]);
+        assert_eq!(config_text(kit.path()), Some("SvelteKit"), "{package_json}");
+    }
+
+    let config_only = project(&[SVELTE_CONFIG]);
+    assert_eq!(config_text(config_only.path()), None);
+}
+
+#[test]
 fn express_comes_after_every_non_node_rule() {
     // 0.1.0 had no Express rule, so these roots got the label of their
     // other build; a frontend or tooling `package.json` must not change that.

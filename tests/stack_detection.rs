@@ -161,7 +161,6 @@ fn config_detection_covers_existing_project_markers_and_no_match_cases() {
         ("deno.json", "Deno"),
         ("vite.config.ts", "Vite"),
         ("astro.config.mjs", "Astro"),
-        ("svelte.config.js", "SvelteKit"),
     ] {
         let dir = TempDir::new().expect("temp dir");
         write_file(dir.path(), marker, "");
@@ -598,6 +597,11 @@ fn framework_labels_are_final_and_tool_labels_accept_config() {
 
     let svelte = TempDir::new().expect("temp dir");
     write_file(svelte.path(), "svelte.config.js", "");
+    write_file(
+        svelte.path(),
+        "package.json",
+        r#"{"devDependencies": {"@sveltejs/kit": "2"}}"#,
+    );
 
     let mut detector = StackDetector::new();
     let rails = detector.detect_stack(StackInput::new("rails").project_root(rack.path()));

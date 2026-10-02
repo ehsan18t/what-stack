@@ -2,6 +2,7 @@ use std::path::Path;
 
 use self::ConfigMatch::{
     AllOf, Exact, Extension, FileToken, NodeDependency, NodeRuntimeDependency, Prefix,
+    PrefixWithNodeDependency,
 };
 use super::files::ProjectFiles;
 use super::python;
@@ -23,6 +24,9 @@ pub enum ConfigMatch {
     /// `package.json` lists any of these packages under `"dependencies"` or
     /// `"devDependencies"`.
     NodeDependency(&'static [&'static str]),
+    /// A [`Prefix`] config file plus a [`NodeDependency`] on any of the
+    /// packages, for config names that several tools share.
+    PrefixWithNodeDependency(&'static str, &'static [&'static str]),
     /// `package.json` lists any of these packages under `"dependencies"`. A
     /// package that only appears in `"devDependencies"` (a test server, a
     /// mock) does not describe what the project runs.
@@ -39,7 +43,13 @@ pub const CONFIG_RULES: &[ConfigRule] = &[
     (Prefix("next.config"), labels::NEXT_JS, E::Node),
     (Prefix("nuxt.config"), labels::NUXT, E::Node),
     (Exact("angular.json"), labels::ANGULAR, E::Node),
-    (Prefix("svelte.config"), labels::SVELTEKIT, E::Node),
+    // Plain Svelte with Vite also has `svelte.config.js`; only SvelteKit
+    // depends on `@sveltejs/kit`.
+    (
+        PrefixWithNodeDependency("svelte.config", &["@sveltejs/kit"]),
+        labels::SVELTEKIT,
+        E::Node,
+    ),
     (Prefix("astro.config"), labels::ASTRO, E::Node),
     // React Router v7 framework mode and Remix both build with Vite, so they
     // come before `vite.config`.
@@ -148,7 +158,9 @@ pub const LATE_CONFIG_RULES: &[ConfigRule] = &[
 /// with `vite.config.ts`), and `express` under `"dependencies"` (`Express`,
 /// only when no other rule matches, so a repo with `package.json` and
 /// `Cargo.toml`, `go.mod`, or a `.csproj` keeps the label of that build).
-/// `react-router.config.ts` is `React Router`. Python
+/// `react-router.config.ts` is `React Router`, and `svelte.config.js` is
+/// `SvelteKit` only when `package.json` lists `@sveltejs/kit` (plain Svelte
+/// with Vite is `Vite`). Python
 /// projects get a second pass that can identify `Django`, `Flask`, `FastAPI`,
 /// `Starlette`, and `Litestar` from entry files or dependency files. Ruby
 /// projects need `Gemfile` and `config.ru` (`Ruby (Rack)`), plus `bin/rails`
@@ -271,6 +283,9 @@ fn rule_matches(project_root: &Path, files: &ProjectFiles, matcher: ConfigMatch)
         NodeDependency(packages) => files.node_dependencies(project_root).has_any(packages),
         NodeRuntimeDependency(packages) => {
             files.node_dependencies(project_root).has_runtime(packages)
+        }
+        PrefixWithNodeDependency(prefix, packages) => {
+            files.contains_prefix(prefix) && files.node_dependencies(project_root).has_any(packages)
         }
         FileToken(file_name, token) => files.mentions_token(project_root, file_name, token),
     }
