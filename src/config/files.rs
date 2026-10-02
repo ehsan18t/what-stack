@@ -79,7 +79,12 @@ const MAX_SCAN_BYTES: u64 = 64 * 1024;
 /// would block a plain `open` forever. The type is checked before opening, the
 /// open is non-blocking on Unix, and the opened handle is checked again, which
 /// closes the race where the path is swapped between the two checks.
+///
+/// Windows has no FIFOs in directory listings and refuses to open a directory
+/// as a file, so the check after opening is enough there and the extra
+/// metadata call is skipped.
 fn read_regular_file_prefix(path: &Path) -> Option<Vec<u8>> {
+    #[cfg(not(windows))]
     if !std::fs::metadata(path).ok()?.is_file() {
         return None;
     }
