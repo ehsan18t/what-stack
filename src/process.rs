@@ -9,79 +9,64 @@
 use crate::ecosystem::Ecosystem as E;
 use crate::{StackKind, StackLabel, labels};
 
-/// One process rule: executable name, label, and the ecosystem whose project
-/// config may refine the label.
-pub type ProcessRule = (&'static str, StackLabel, E);
+/// One process rule: every executable name of one label, the label, and the
+/// ecosystem whose project config may refine the label.
+pub type ProcessRule = (&'static [&'static str], StackLabel, E);
 
-/// Known process names mapped to stack labels.
+/// Known process names mapped to stack labels, one row per label.
 ///
-/// Each label carries its [`StackKind`](crate::StackKind) at the rule site.
 /// Linear scan with `eq_ignore_ascii_case` avoids allocating a lowercase
 /// `String` on every lookup.
-pub const PROCESS_MAP: &[ProcessRule] = &[
-    ("node", labels::NODE, E::Node),
-    ("nodejs", labels::NODE, E::Node),
-    ("python", labels::PYTHON, E::Python),
-    ("python3", labels::PYTHON, E::Python),
-    ("pythonw", labels::PYTHON, E::Python),
-    ("ruby", labels::RUBY, E::Ruby),
-    ("java", labels::JAVA, E::Jvm),
-    ("javaw", labels::JAVA, E::Jvm),
-    ("go", labels::GO, E::Go),
-    ("deno", labels::DENO, E::Deno),
-    ("bun", labels::BUN, E::Node),
-    ("dotnet", labels::DOTNET, E::DotNet),
-    ("php", labels::PHP, E::Php),
-    ("php-fpm", labels::PHP, E::Php),
-    ("perl", labels::PERL, E::Other),
-    ("cargo", labels::RUST, E::Rust),
-    ("rustc", labels::RUST, E::Rust),
-    ("erlang", labels::ERLANG, E::Beam),
-    ("beam.smp", labels::ERLANG, E::Beam),
-    ("elixir", labels::ELIXIR, E::Beam),
-    ("dart", labels::DART, E::Other),
-    ("swift", labels::SWIFT, E::Other),
-    ("postgres", labels::POSTGRESQL, E::Other),
-    ("postgresql", labels::POSTGRESQL, E::Other),
-    ("mysqld", labels::MYSQL, E::Other),
-    ("mysql", labels::MYSQL, E::Other),
-    ("mariadbd", labels::MARIADB, E::Other),
-    ("mariadb", labels::MARIADB, E::Other),
-    ("mongod", labels::MONGODB, E::Other),
-    ("mongos", labels::MONGODB, E::Other),
-    ("redis-server", labels::REDIS, E::Other),
-    ("redis", labels::REDIS, E::Other),
-    ("valkey-server", labels::VALKEY, E::Other),
-    ("valkey", labels::VALKEY, E::Other),
-    ("memcached", labels::MEMCACHED, E::Other),
-    ("clickhouse-server", labels::CLICKHOUSE, E::Other),
-    ("cockroach", labels::COCKROACHDB, E::Other),
-    ("sqlservr", labels::SQL_SERVER, E::Other),
-    ("nginx", labels::NGINX, E::Other),
-    ("apache2", labels::APACHE, E::Other),
-    ("httpd", labels::APACHE, E::Other),
-    ("caddy", labels::CADDY, E::Other),
-    ("traefik", labels::TRAEFIK, E::Other),
-    ("envoy", labels::ENVOY, E::Other),
-    ("haproxy", labels::HAPROXY, E::Other),
-    ("w3wp", labels::IIS, E::Other),
-    ("gunicorn", labels::GUNICORN, E::Python),
-    ("uvicorn", labels::UVICORN, E::Python),
-    ("puma", labels::PUMA, E::Ruby),
-    ("elasticsearch", labels::ELASTICSEARCH, E::Other),
-    ("opensearch", labels::OPENSEARCH, E::Other),
-    ("rabbitmq-server", labels::RABBITMQ, E::Other),
-    ("kafka", labels::KAFKA, E::Other),
-    ("webpack", labels::WEBPACK, E::Node),
-    ("vite", labels::VITE, E::Node),
-    ("next-server", labels::NEXT_JS, E::Node),
-    ("nuxt", labels::NUXT, E::Node),
-    ("hugo", labels::HUGO, E::Other),
-    ("jekyll", labels::JEKYLL, E::Ruby),
-    ("flask", labels::FLASK, E::Python),
-    ("rails", labels::RAILS, E::Ruby),
-    ("gradle", labels::JAVA_GRADLE, E::Jvm),
-    ("mvn", labels::JAVA_MAVEN, E::Jvm),
+pub const PROCESS_RULES: &[ProcessRule] = &[
+    (&["node", "nodejs"], labels::NODE, E::Node),
+    (&["python", "python3", "pythonw"], labels::PYTHON, E::Python),
+    (&["ruby"], labels::RUBY, E::Ruby),
+    (&["java", "javaw"], labels::JAVA, E::Jvm),
+    (&["go"], labels::GO, E::Go),
+    (&["deno"], labels::DENO, E::Deno),
+    (&["bun"], labels::BUN, E::Node),
+    (&["dotnet"], labels::DOTNET, E::DotNet),
+    (&["php", "php-fpm"], labels::PHP, E::Php),
+    (&["perl"], labels::PERL, E::Other),
+    (&["cargo", "rustc"], labels::RUST, E::Rust),
+    (&["erlang", "beam.smp"], labels::ERLANG, E::Beam),
+    (&["elixir"], labels::ELIXIR, E::Beam),
+    (&["dart"], labels::DART, E::Other),
+    (&["swift"], labels::SWIFT, E::Other),
+    (&["postgres", "postgresql"], labels::POSTGRESQL, E::Other),
+    (&["mysqld", "mysql"], labels::MYSQL, E::Other),
+    (&["mariadbd", "mariadb"], labels::MARIADB, E::Other),
+    (&["mongod", "mongos"], labels::MONGODB, E::Other),
+    (&["redis-server", "redis"], labels::REDIS, E::Other),
+    (&["valkey-server", "valkey"], labels::VALKEY, E::Other),
+    (&["memcached"], labels::MEMCACHED, E::Other),
+    (&["clickhouse-server"], labels::CLICKHOUSE, E::Other),
+    (&["cockroach"], labels::COCKROACHDB, E::Other),
+    (&["sqlservr"], labels::SQL_SERVER, E::Other),
+    (&["nginx"], labels::NGINX, E::Other),
+    (&["apache2", "httpd"], labels::APACHE, E::Other),
+    (&["caddy"], labels::CADDY, E::Other),
+    (&["traefik"], labels::TRAEFIK, E::Other),
+    (&["envoy"], labels::ENVOY, E::Other),
+    (&["haproxy"], labels::HAPROXY, E::Other),
+    (&["w3wp"], labels::IIS, E::Other),
+    (&["gunicorn"], labels::GUNICORN, E::Python),
+    (&["uvicorn"], labels::UVICORN, E::Python),
+    (&["puma"], labels::PUMA, E::Ruby),
+    (&["elasticsearch"], labels::ELASTICSEARCH, E::Other),
+    (&["opensearch"], labels::OPENSEARCH, E::Other),
+    (&["rabbitmq-server"], labels::RABBITMQ, E::Other),
+    (&["kafka"], labels::KAFKA, E::Other),
+    (&["webpack"], labels::WEBPACK, E::Node),
+    (&["vite"], labels::VITE, E::Node),
+    (&["next-server"], labels::NEXT_JS, E::Node),
+    (&["nuxt"], labels::NUXT, E::Node),
+    (&["hugo"], labels::HUGO, E::Other),
+    (&["jekyll"], labels::JEKYLL, E::Ruby),
+    (&["flask"], labels::FLASK, E::Python),
+    (&["rails"], labels::RAILS, E::Ruby),
+    (&["gradle"], labels::JAVA_GRADLE, E::Jvm),
+    (&["mvn"], labels::JAVA_MAVEN, E::Jvm),
 ];
 
 /// Detect a stack label from a process executable name.
@@ -171,9 +156,9 @@ fn find_process_rule(process_name: &str) -> Option<&'static ProcessRule> {
 }
 
 fn find_exact(name: &str) -> Option<&'static ProcessRule> {
-    PROCESS_MAP
+    PROCESS_RULES
         .iter()
-        .find(|(key, _, _)| name.eq_ignore_ascii_case(key))
+        .find(|(names, _, _)| names.iter().any(|key| name.eq_ignore_ascii_case(key)))
 }
 
 fn find_titled(name: &str) -> Option<&'static ProcessRule> {
