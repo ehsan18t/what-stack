@@ -53,7 +53,10 @@ use crate::{ProjectInput, StackInput, StackKind, StackLabel};
 /// accepts Node config. A Python process takes only framework labels from
 /// config, so `gunicorn` in a Python project with no recognized framework
 /// stays `Gunicorn`. An unknown process uses every rule, in the order of
-/// [`crate::detect_from_config`].
+/// [`crate::detect_from_config`], except that when its executable lies inside
+/// the project root, Rust, Go, .NET, and JVM config are tried first: a binary
+/// at `tmp/main` in a repo with `go.mod`, `package.json`, and `vite.config.js`
+/// is `Go`, not `Vite`.
 ///
 /// # Examples
 ///
@@ -243,7 +246,7 @@ impl StackDetector {
 
         let exe_path = exe_path?;
         if path_starts_with(exe_path, project_root) {
-            Some(ConfigScope::All)
+            Some(ConfigScope::CompiledFirst)
         } else if is_go_build_binary(exe_path) {
             Some(ConfigScope::Ecosystem(Ecosystem::Go))
         } else if self.is_cargo_workspace_binary(exe_path, project_root) {

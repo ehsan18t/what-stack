@@ -107,6 +107,11 @@ pub fn detect_from_config(project_root: &Path) -> Option<StackLabel> {
 pub enum ConfigScope {
     /// Unknown process: every rule, in the order of [`detect_from_config`].
     All,
+    /// Unknown process whose executable lies inside the project: a compiled
+    /// project binary is far more likely than a Node or Python program, so
+    /// rules of compiled ecosystems (see [`E::is_compiled`]) are tried first,
+    /// then every rule in the usual order.
+    CompiledFirst,
     /// A process of a known ecosystem, either from its name or because its
     /// executable was built by that ecosystem's tools: only the rules the
     /// ecosystem accepts (see [`E::accepts_config`]). A Python process gets
@@ -120,6 +125,8 @@ pub fn detect_for_scope(project_root: &Path, scope: ConfigScope) -> Option<Stack
 
     match scope {
         ConfigScope::All => detect_with(project_root, &files, |_| true, false),
+        ConfigScope::CompiledFirst => detect_with(project_root, &files, E::is_compiled, false)
+            .or_else(|| detect_with(project_root, &files, |_| true, false)),
         ConfigScope::Ecosystem(process) => detect_with(
             project_root,
             &files,

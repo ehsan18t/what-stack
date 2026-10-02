@@ -178,3 +178,31 @@ fn cargo_workspace_member_binaries_get_the_rust_label() {
         None
     );
 }
+
+#[test]
+fn unknown_binaries_inside_the_project_prefer_compiled_ecosystems() {
+    let project = TempDir::new().expect("temp dir");
+    write_file(project.path(), "go.mod", "module example.com/app\n");
+    write_file(project.path(), "package.json", "{}");
+    write_file(project.path(), "vite.config.js", "");
+    let air_binary = project.path().join("tmp/main");
+    assert_eq!(detect_unknown(&air_binary, project.path()), Some("Go"));
+
+    let dotnet = TempDir::new().expect("temp dir");
+    write_file(dotnet.path(), "Api.csproj", "<Project />");
+    write_file(dotnet.path(), "package.json", "{}");
+    write_file(dotnet.path(), "vite.config.ts", "");
+    let app = dotnet.path().join("bin/Debug/net8.0/Api.exe");
+    assert_eq!(detect_unknown(&app, dotnet.path()), Some(".NET"));
+
+    // Without compiled config the usual order still applies.
+    let web = TempDir::new().expect("temp dir");
+    write_file(web.path(), "package.json", "{}");
+    write_file(web.path(), "next.config.mjs", "");
+    let helper = web.path().join("bin/helper");
+    assert_eq!(detect_unknown(&helper, web.path()), Some("Next.js"));
+    assert_eq!(
+        text(what_stack::detect_from_config(project.path())),
+        Some("Vite")
+    );
+}

@@ -44,4 +44,11 @@ impl Ecosystem {
     pub fn accepts_config(self, rule: Self) -> bool {
         self == rule || (self == Self::Deno && rule == Self::Node)
     }
+
+    /// Whether projects of this ecosystem are compiled to a native or
+    /// bytecode artifact that runs as its own process (Rust, Go, .NET, and the
+    /// JVM), so an unknown executable inside the project is most likely one.
+    pub const fn is_compiled(self) -> bool {
+        matches!(self, Self::Rust | Self::Go | Self::DotNet | Self::Jvm)
+    }
 }
