@@ -78,9 +78,21 @@ pub(super) fn detect_python_project(
         return Some(labels::DJANGO);
     }
 
-    detect_python_framework_from_entry_files(project_root, files)
-        .or_else(|| detect_python_framework_from_dependencies(project_root, files))
-        .or_else(|| (!python_process).then_some(labels::PYTHON))
+    detect_in_files(
+        project_root,
+        files,
+        PYTHON_ENTRY_FILES,
+        detect_python_framework_from_source,
+    )
+    .or_else(|| {
+        detect_in_files(
+            project_root,
+            files,
+            PYTHON_DEPENDENCY_FILES,
+            detect_python_framework_from_dependency_text,
+        )
+    })
+    .or_else(|| (!python_process).then_some(labels::PYTHON))
 }
 
 fn is_python_project(files: &ProjectFiles, python_process: bool) -> bool {
@@ -91,39 +103,21 @@ fn is_python_project(files: &ProjectFiles, python_process: bool) -> bool {
     files.any_exact(PYTHON_ENTRY_FILES) && (python_process || !files.contains_exact("package.json"))
 }
 
-fn detect_python_framework_from_entry_files(
+/// Run `detect` on the lowercased text of each listed file that can be read,
+/// in order, and return the first label found.
+fn detect_in_files(
     project_root: &Path,
     files: &ProjectFiles,
+    file_names: &[&str],
+    detect: fn(&str) -> Option<StackLabel>,
 ) -> Option<StackLabel> {
-    for file_name in PYTHON_ENTRY_FILES {
-        let Some(source) = files.read_text(project_root, file_name) else {
-            continue;
-        };
-
-        if let Some(label) = detect_python_framework_from_source(&source) {
-            return Some(label);
-        }
-    }
-
-    None
-}
-
-fn detect_python_framework_from_dependencies(
-    project_root: &Path,
-    files: &ProjectFiles,
-) -> Option<StackLabel> {
-    for file_name in PYTHON_DEPENDENCY_FILES {
-        let Some(contents) = files.read_text(project_root, file_name) else {
-            continue;
-        };
-
-        let normalized = contents.to_ascii_lowercase();
-        if let Some(label) = detect_python_framework_from_dependency_text(&normalized) {
-            return Some(label);
-        }
-    }
-
-    None
+    file_names
+        .iter()
+        .filter_map(|file_name| files.read_text(project_root, file_name))
+        .find_map(|mut text| {
+            text.make_ascii_lowercase();
+            detect(&text)
+        })
 }
 
 fn detect_python_framework_from_dependency_text(normalized: &str) -> Option<StackLabel> {
@@ -133,17 +127,15 @@ fn detect_python_framework_from_dependency_text(normalized: &str) -> Option<Stac
         .map(|(_, label)| label.clone())
 }
 
-fn detect_python_framework_from_source(source: &str) -> Option<StackLabel> {
-    let normalized = source.to_ascii_lowercase();
-
-    if contains_any(&normalized, DJANGO_SOURCE_PATTERNS) {
+fn detect_python_framework_from_source(normalized: &str) -> Option<StackLabel> {
+    if contains_any(normalized, DJANGO_SOURCE_PATTERNS) {
         return Some(labels::DJANGO);
     }
 
     PYTHON_SOURCE_PATTERNS
         .iter()
         .find(|(_, imports, constructor)| {
-            source_mentions_framework(&normalized, imports, constructor)
+            source_mentions_framework(normalized, imports, constructor)
         })
         .map(|(label, _, _)| label.clone())
 }
@@ -156,27 +148,16 @@ fn source_mentions_framework(haystack: &str, imports: &[&str], constructor: &str
     haystack.contains(constructor) && contains_any(haystack, imports)
 }
 
+/// Whether `token` occurs in `haystack` as a whole package name, not as part
+/// of a longer name such as `flask-login` or `pytest-django`.
 fn contains_dependency_token(haystack: &str, token: &str) -> bool {
-    let mut offset = 0;
+    let bytes = haystack.as_bytes();
 
-    while let Some(index) = haystack[offset..].find(token) {
-        let start = offset + index;
-        let end = start + token.len();
-        let bytes = haystack.as_bytes();
-        let before = start
-            .checked_sub(1)
-            .and_then(|position| bytes.get(position))
-            .copied();
-        let after = bytes.get(end).copied();
-
-        if is_dependency_boundary(before) && is_dependency_boundary(after) {
-            return true;
-        }
-
-        offset = start + 1;
-    }
-
-    false
+    haystack.match_indices(token).any(|(start, _)| {
+        let before = start.checked_sub(1).and_then(|index| bytes.get(index));
+        let after = bytes.get(start + token.len());
+        is_dependency_boundary(before.copied()) && is_dependency_boundary(after.copied())
+    })
 }
 
 const fn is_dependency_boundary(byte: Option<u8>) -> bool {
