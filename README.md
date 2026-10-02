@@ -95,35 +95,9 @@ So `node` in a Next.js folder is `Next.js`, while `redis-server` started from th
 
 Config detection also follows the process ecosystem: a known runtime or tool accepts only config labels from its own ecosystem. In a Laravel project with `vite.config.js`, `php` is `Laravel` while `node` is `Vite`; `python` in a Next.js folder stays `Python`. An unknown process, and `detect_from_config`, use every rule in a fixed order.
 
-## Development
+## Minimum Supported Rust Version
 
-Install Rust stable and the supported lint targets:
-
-```bash
-rustup target add x86_64-unknown-linux-gnu x86_64-pc-windows-msvc
-```
-
-Install local hooks:
-
-```powershell
-.\scripts\install-hooks.ps1
-```
-
-```bash
-bash scripts/install-hooks.sh
-```
-
-## Quality Gates
-
-| Gate | Command | Purpose |
-| ---- | ------- | ------- |
-| 1 | `cargo fmt --all -- --check` | Formatting |
-| 2 | `cargo clippy --locked --all-targets -- -D warnings` | Lints |
-| 3 | `cargo test --locked --lib --tests && cargo test --locked --doc` | Tests |
-| 4 | `cargo bench --locked --no-run` | Benchmarks compile |
-| 5 | `cargo build --locked` | Build |
-| 6 | `cargo doc --locked --no-deps` | Documentation |
-| 7 | `cargo deny check` | Dependency audit |
+what-stack requires Rust 1.88 or newer (declared as `rust-version` in `Cargo.toml`). It uses edition 2024 and two features stabilized in 1.88: `let` chains in `if` conditions and `slice::as_chunks`. CI checks every target with Rust 1.88.
 
 ## Benchmarks
 
@@ -135,7 +109,7 @@ cargo bench --bench benchmarks
 
 ## Contributing
 
-See [CONTRIBUTING.md](docs/CONTRIBUTING.md).
+Development setup, the quality gates, the test layout, and commit conventions are in [CONTRIBUTING.md](docs/CONTRIBUTING.md).
 
 ## License
 
