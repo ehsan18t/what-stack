@@ -1044,76 +1044,61 @@ corpus! {
 // ---------------------------------------------------------------------------
 
 corpus! {
-    #[ignore = "pending rule: Next.js from a package.json dependency without next.config"]
     next_package_json_without_config: Case::new(NEXT_WITHOUT_CONFIG)
         .process("node").exe(NODE).cwd("landing")
         .expect(Some("Next.js"), Some("landing"));
-    #[ignore = "pending rule: Remix from @remix-run dependencies over vite.config"]
     remix_vite: Case::new(REMIX)
         .process("node").exe(NODE).cwd("remix-app")
         .expect(Some("Remix"), Some("remix-app"));
-    #[ignore = "pending rule: React Router from react-router.config over vite.config"]
     react_router_framework: Case::new(REACT_ROUTER)
         .process("node").exe(NODE).cwd("rr-app")
         .expect(Some("React Router"), Some("rr-app"));
-    #[ignore = "pending rule: NestJS from @nestjs/core or nest-cli.json"]
     nestjs: Case::new(NESTJS)
         .process("node").exe(NODE).cwd("gateway").cmd(&["~/gateway/dist/main.js"])
         .expect(Some("NestJS"), Some("gateway"));
-    #[ignore = "pending rule: Express from a package.json dependency"]
     express: Case::new(EXPRESS)
         .process("node").exe(NODE).cwd("legacy-api").cmd(&["server.js"])
         .expect(Some("Express"), Some("legacy-api"));
-    #[ignore = "pending rule: lock files must not report transitive frameworks"]
     uv_lock_transitive_starlette: Case::new(UV_TRANSITIVE_STARLETTE)
         .process("python3").exe(PYTHON).cwd("agent")
         .expect(Some("Python"), Some("agent"));
-    #[ignore = "pending rule: comments in pyproject.toml are not dependencies"]
     pyproject_comment_mentions_framework: Case::new(PYPROJECT_COMMENT)
         .process("python3").exe(PYTHON).cwd("crawler")
         .expect(Some("Python"), Some("crawler"));
-    #[ignore = "pending rule: Symfony from composer.json and bin/console"]
     symfony: Case::new(SYMFONY)
         .process("php").exe(PHP).cwd("tickets").cmd(&["bin/console", "server:run"])
         .expect(Some("Symfony"), Some("tickets"));
-    #[ignore = "pending rule: Spring Boot from pom.xml"]
     spring_boot_maven: Case::new(SPRING_MAVEN)
         .process("java").exe(JAVA).cwd("accounts")
         .cmd(&["-jar", "~/accounts/target/accounts-0.0.1-SNAPSHOT.jar"])
         .expect(Some("Spring Boot"), Some("accounts"));
-    #[ignore = "pending rule: Spring Boot from build.gradle.kts"]
     spring_boot_gradle_kts: Case::new(SPRING_GRADLE_KTS)
         .process("java").exe(JAVA).cwd("catalog")
         .expect(Some("Spring Boot"), Some("catalog"));
-    #[ignore = "pending rule: Gradle multi-module root from settings.gradle"]
-    gradle_multi_module_root: Case::new(GRADLE_MULTI_MODULE)
+    // The nearest build file wins, as for Cargo workspace members and .NET
+    // projects in a solution: a process run inside a module belongs to that
+    // module. settings.gradle only marks a root that has no build script.
+    gradle_module_in_multi_module_build: Case::new(GRADLE_MULTI_MODULE)
         .process("java").exe(JAVA).cwd("suite/app/src/main")
-        .expect(Some("Kotlin (Gradle)"), Some("suite"));
-    #[ignore = "pending rule: .sln files mark a project root"]
+        .expect(Some("Kotlin (Gradle)"), Some("suite/app"));
     dotnet_solution_root: Case::new(DOTNET_SOLUTION)
         .process("dotnet").exe(DOTNET).cwd("erp").cmd(&["run", "--project", "src/Api"])
         .expect(Some(".NET"), Some("erp"));
-    #[ignore = "pending rule: go run temporary executable is Go"]
     go_run_temp_executable: Case::new(GO_SERVICE)
         .process("main").exe("tmp/go-build2734481/b001/exe/main").cwd("inventory")
         .expect(Some("Go"), Some("inventory"));
-    #[ignore = "pending rule: compiled ecosystems win for a repository binary"]
     go_vite_repository_binary: Case::new(GO_VITE)
         .process("app").exe("console/app").cwd("console")
         .expect(Some("Go"), Some("console"));
-    #[ignore = "pending rule: Cargo workspace target executables belong to the member"]
     cargo_member_run_from_crate_dir: Case::new(CARGO_WORKSPACE)
         .process("server").exe("engine/target/debug/server").cwd("engine/crates/server")
         .expect(Some("Rust"), Some("engine/crates/server"));
-    #[ignore = "pending rule: Phoenix from mix.exs dependencies"]
     phoenix_beam: Case::new(PHOENIX)
         .process("beam.smp").exe(BEAM).cwd("chat")
         .expect(Some("Phoenix"), Some("chat"));
-    #[ignore = "pending rule: erl and werl are BEAM runtimes"]
     phoenix_erl_windows: Case::new(PHOENIX)
         .process("erl.exe").exe(ERL_WINDOWS).cwd("chat")
         .expect(Some("Phoenix"), Some("chat"));
-    #[ignore = "pending rule: a version manager's directory is not the project of its executables"]
     nvm_node_has_no_project: Case::new(NVM)
         .process("node").exe(".nvm/versions/node/v20.11.1/bin/node").cwd("")
         .expect(Some("Node.js"), None);

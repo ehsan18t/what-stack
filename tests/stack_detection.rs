@@ -314,7 +314,6 @@ fn walk_finds_marker_at_max_depth_boundary() {
 }
 
 #[test]
-#[ignore = "pending fix: a walk stopped by the depth cap must not cache misses"]
 fn depth_capped_walk_does_not_poison_the_cache() {
     let home = fake_home();
     let project = temp_in(&home);
