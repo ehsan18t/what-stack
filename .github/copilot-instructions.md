@@ -19,17 +19,17 @@ Treat every rule here as a hard constraint unless the human operator explicitly 
 | ---- | -------------- |
 | `src/lib.rs` | Crate docs, public re-exports, README doctests, cross-rule label consistency tests |
 | `src/types.rs` | Public types: `StackKind`, `StackLabel`, `ProjectInput`, `StackInput` |
-| `src/detector.rs` | `StackDetector`: cached project-root walks (misses from depth-capped walks are not cached) and config results, stack priority, config guard, config scope for unknown binaries (`go run` builds, Cargo workspace targets, compiled ecosystems first) |
+| `src/detector.rs` | `StackDetector`: cached project-root walks (misses from depth-capped walks are not cached) and config results, stack priority, config guard, config scope for unknown binaries (`go run` builds, Cargo workspace targets, compiled ecosystems first, Node first for `node_modules` binaries) |
 | `src/image.rs` | `detect_from_image`: exact and prefix image rules, companion-image filter, `dotnet` namespace |
 | `src/process.rs` | `detect_from_process` and `detect_from_process_names`: process rules, version suffixes, truncated titles, `.exe` stripping |
-| `src/project.rs` | Project markers (including `.sln`/`.slnx` and `settings.gradle`), upward walk with home ceiling and depth cap, home dot-directory rejection for executable roots, `resolve_project_root`, `home_dir` (libc on Unix) |
+| `src/project.rs` | Project markers (including `.sln`/`.slnx` and `settings.gradle`), upward walk with home ceiling and depth cap, home dot-directory rejection for executable roots, Python virtual environments for runtime executables, `resolve_project_root`, `home_dir` (libc on Unix) |
 | `src/ecosystem.rs` | Internal ecosystem tags that limit which config labels a known runtime accepts |
 | `src/labels.rs` | Every built-in `StackLabel` defined once as a constant, plus the `ALL` list used by consistency tests |
 | `src/text.rs` | Shared name helpers: ASCII case-insensitive prefix and suffix stripping, file extensions |
 | `src/config/mod.rs` | `detect_from_config` entry point |
 | `src/config/rules.rs` | Ordered config rule tables (exact, prefix, extension, all-of, `package.json` dependency, and file-token matchers) and matching |
 | `src/config/python.rs` | Python project and framework detection from entry and dependency files |
-| `src/config/node.rs` | Dependency names from `package.json` `dependencies` and `devDependencies` without a JSON parser |
+| `src/config/node.rs` | Dependency names from the top-level `dependencies` and `devDependencies` of `package.json`, kept apart, without a JSON parser |
 | `src/config/files.rs` | Directory listing, bounded, non-blocking, encoding-tolerant file reads, and comment-aware token search in build files |
 | `tests/` | Integration, corpus, and property tests; see "Tests" in `docs/CONTRIBUTING.md` |
 | `benches/benchmarks.rs` | Gungraun instruction-count benchmarks |
