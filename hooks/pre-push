@@ -37,27 +37,21 @@ echo "-> [2/7] Running cross-target clippy..."
 sh scripts/check-platform-clippy.sh
 
 echo "-> [3/7] Running tests..."
-
 cargo test --locked --lib --tests
 cargo test --locked --doc
 
-
-
+# Benchmarks only compile here; running them needs Valgrind and
+# gungraun-runner, which Linux CI provides.
 echo "-> [4/7] Compiling benchmarks..."
 cargo bench --locked --no-run
 
 echo "-> [5/7] Building crate..."
-
 cargo build --locked
 
-
 echo "-> [6/7] Building docs..."
-
 RUSTDOCFLAGS="-D warnings -D rustdoc::bare_urls -D rustdoc::invalid_rust_codeblocks -D rustdoc::private_intra_doc_links -D rustdoc::unescaped_backticks" cargo doc --locked --no-deps
 
-
 echo "-> [7/7] Auditing dependencies..."
-
 if command -v cargo-deny >/dev/null 2>&1; then
     cargo deny check 2>/dev/null || echo "Dependency audit failed locally; CI enforces this gate."
 else

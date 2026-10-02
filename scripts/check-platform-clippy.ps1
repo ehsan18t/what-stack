@@ -78,9 +78,7 @@ foreach ($target in $targets) {
         cargo clippy --locked --all-targets --target $target -- -D warnings
     } else {
         Write-Output "-> Running cross-target clippy for $target (lib only)..."
-
         cargo clippy --locked --lib --target $target -- -D warnings
-
     }
 
     if ($LASTEXITCODE -ne 0) {

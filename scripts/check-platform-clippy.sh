@@ -62,9 +62,7 @@ for target in $TARGETS; do
         cargo clippy --locked --all-targets --target "$target" -- -D warnings
     else
         echo "-> Running cross-target clippy for $target (lib only)..."
-
         cargo clippy --locked --lib --target "$target" -- -D warnings
-
     fi
 
     echo "  OK $target"

@@ -30,16 +30,14 @@ ensure_cargo
 
 echo "what-stack pre-commit quality gate"
 
-echo "-> Checking formatting..."
+echo "-> [1/3] Checking formatting..."
 cargo fmt --all -- --check
 
-echo "-> Running cross-target clippy..."
+echo "-> [2/3] Running cross-target clippy..."
 sh scripts/check-platform-clippy.sh
 
-echo "-> Running tests..."
-
+echo "-> [3/3] Running tests..."
 cargo test --locked --lib --tests
 cargo test --locked --doc
-
 
 echo "All pre-commit gates passed."
